@@ -298,6 +298,17 @@ export async function exportAllCanvasses(campaignId: string, canvasses: Canvass[
   return Promise.all(canvasses.map((c) => fetchCanvassExport(campaignId, c.id, c.name)));
 }
 
+// For callers (map "All streets", results "whole canvass" scope) that
+// only need the flattened houses, not an export shape — keyed on the
+// stable canvassId rather than the Canvass object, whose reference
+// changes on every canvass-doc write and would otherwise make a
+// dependent effect re-run (and re-fetch the whole tree) on any
+// unrelated edit while that view stays open.
+export async function fetchCanvassHouses(campaignId: string, canvassId: string): Promise<House[]> {
+  const data = await fetchCanvassExport(campaignId, canvassId, "");
+  return data.streets.flatMap((s) => s.houses);
+}
+
 export function subscribeCanvass(campaignId: string, canvassId: string, cb: (canvass: Canvass | null) => void) {
   return onSnapshot(canvassRef(campaignId, canvassId), (snap) => {
     if (!snap.exists()) {

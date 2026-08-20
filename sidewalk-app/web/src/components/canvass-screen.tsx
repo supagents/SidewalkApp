@@ -9,6 +9,7 @@ import {
   deleteHouse,
   deleteStreet,
   exportCanvass,
+  fetchCanvassHouses,
   renameCanvass,
   renameStreet,
   subscribeCanvass,
@@ -89,6 +90,11 @@ export function CanvassScreen({
         if (current && list.some((s) => s.id === current)) return current;
         return list[0]?.id ?? null;
       });
+      // Unlike the list view, "no street selected" is a valid map
+      // state (whole canvass) — so if the street the map was filtered
+      // to just got deleted, fall back to "All" instead of picking an
+      // arbitrary replacement street.
+      setMapStreetId((current) => (current && !list.some((s) => s.id === current) ? null : current));
     });
   }, [campaignId, canvassId]);
 
@@ -107,14 +113,13 @@ export function CanvassScreen({
     if (mapStreetId) {
       return subscribeHouses(campaignId, canvassId, mapStreetId, setMapHouses);
     }
-    if (!canvass) return;
     let cancelled = false;
     Promise.resolve().then(async () => {
       if (cancelled) return;
       setLoadingMapHouses(true);
       try {
-        const data = await exportCanvass(campaignId, canvass);
-        if (!cancelled) setMapHouses(data.streets.flatMap((s) => s.houses));
+        const houses = await fetchCanvassHouses(campaignId, canvassId);
+        if (!cancelled) setMapHouses(houses);
       } finally {
         if (!cancelled) setLoadingMapHouses(false);
       }
@@ -122,20 +127,20 @@ export function CanvassScreen({
     return () => {
       cancelled = true;
     };
-  }, [viewMode, mapStreetId, campaignId, canvassId, canvass]);
+  }, [viewMode, mapStreetId, campaignId, canvassId]);
 
   // Only pull every street's houses (a one-time read, not a live
   // subscription) when the results panel actually needs the "whole
   // canvass" breakdown — no point keeping N listeners open otherwise.
   useEffect(() => {
-    if (!statsPanelOpen || statsScope !== "canvass" || !canvass) return;
+    if (!statsPanelOpen || statsScope !== "canvass") return;
     let cancelled = false;
     Promise.resolve().then(async () => {
       if (cancelled) return;
       setLoadingCanvassStats(true);
       try {
-        const data = await exportCanvass(campaignId, canvass);
-        if (!cancelled) setCanvassWideHouses(data.streets.flatMap((s) => s.houses));
+        const houses = await fetchCanvassHouses(campaignId, canvassId);
+        if (!cancelled) setCanvassWideHouses(houses);
       } finally {
         if (!cancelled) setLoadingCanvassStats(false);
       }
@@ -143,7 +148,7 @@ export function CanvassScreen({
     return () => {
       cancelled = true;
     };
-  }, [statsPanelOpen, statsScope, campaignId, canvass]);
+  }, [statsPanelOpen, statsScope, campaignId, canvassId]);
 
   if (!canvass) {
     return (
