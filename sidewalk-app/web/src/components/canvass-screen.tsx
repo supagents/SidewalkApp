@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, BarChart3, Download, Share2 } from "lucide-react";
+import dynamic from "next/dynamic";
+import { ArrowLeft, BarChart3, Download, MapIcon, Share2 } from "lucide-react";
 import {
   addHouses,
   addStreet,
@@ -13,6 +14,7 @@ import {
   subscribeCanvass,
   subscribeHouses,
   subscribeStreets,
+  updateCanvassLocation,
   updateHouse,
 } from "@/lib/canvass-data";
 import { downloadCanvassCSV } from "@/lib/csv";
@@ -26,6 +28,18 @@ import { SharePanel } from "@/components/share-panel";
 import { Toast } from "@/components/toast";
 import { logOut } from "@/lib/auth";
 import { clearGuestSession } from "@/lib/share";
+
+// Leaflet needs `window` and touches the DOM directly, so it can never
+// run during SSR — and loading it only via this dynamic import means
+// its JS/CSS chunk isn't fetched at all until the Map tab is opened.
+const MapView = dynamic(() => import("@/components/map-view").then((m) => m.MapView), {
+  ssr: false,
+  loading: () => (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING MAP</div>
+    </div>
+  ),
+});
 
 export function CanvassScreen({
   campaignId,
@@ -51,8 +65,15 @@ export function CanvassScreen({
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteTarget | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [editingLocation, setEditingLocation] = useState(false);
+  const [cityDraft, setCityDraft] = useState("");
+  const [stateDraft, setStateDraft] = useState("");
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [mapStreetId, setMapStreetId] = useState<string | null>(null);
+  const [mapHouses, setMapHouses] = useState<House[]>([]);
+  const [loadingMapHouses, setLoadingMapHouses] = useState(false);
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -75,6 +96,33 @@ export function CanvassScreen({
     if (!activeStreetId) return;
     return subscribeHouses(campaignId, canvassId, activeStreetId, setActiveHouses);
   }, [campaignId, canvassId, activeStreetId]);
+
+  // Map data loads only while the Map tab is open. A single street
+  // uses a live subscription (same as the list view); "All" is a
+  // one-time full-canvass read — matches the same tradeoff already
+  // made for the "whole canvass" results scope, avoiding a listener
+  // per street just to support a view most sessions won't open.
+  useEffect(() => {
+    if (viewMode !== "map") return;
+    if (mapStreetId) {
+      return subscribeHouses(campaignId, canvassId, mapStreetId, setMapHouses);
+    }
+    if (!canvass) return;
+    let cancelled = false;
+    Promise.resolve().then(async () => {
+      if (cancelled) return;
+      setLoadingMapHouses(true);
+      try {
+        const data = await exportCanvass(campaignId, canvass);
+        if (!cancelled) setMapHouses(data.streets.flatMap((s) => s.houses));
+      } finally {
+        if (!cancelled) setLoadingMapHouses(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode, mapStreetId, campaignId, canvassId, canvass]);
 
   // Only pull every street's houses (a one-time read, not a live
   // subscription) when the results panel actually needs the "whole
@@ -118,6 +166,23 @@ export function CanvassScreen({
     await renameCanvass(campaignId, canvassId, name);
   };
 
+  const startEditLocation = () => {
+    setCityDraft(canvass.city);
+    setStateDraft(canvass.state);
+    setEditingLocation(true);
+  };
+  const commitLocation = async () => {
+    setEditingLocation(false);
+    const city = cityDraft.trim();
+    const state = stateDraft.trim();
+    if (city === canvass.city && state === canvass.state) return;
+    try {
+      await updateCanvassLocation(campaignId, canvassId, city, state);
+    } catch {
+      flashError("Couldn't save city/state.");
+    }
+  };
+
   const handleAddStreet = async (name: string) => {
     try {
       const id = await addStreet(campaignId, canvassId, name);
@@ -128,10 +193,19 @@ export function CanvassScreen({
   };
 
   const handleAddHouses = async (raw: string) => {
-    if (!activeStreetId) return;
+    if (!activeStreetId || !activeStreet) return;
     try {
       const existing = new Set(activeHouses.map((h) => h.number));
-      const added = await addHouses(campaignId, canvassId, activeStreetId, raw, existing);
+      const added = await addHouses(
+        campaignId,
+        canvassId,
+        activeStreetId,
+        raw,
+        existing,
+        activeStreet.name,
+        canvass.city,
+        canvass.state
+      );
       if (added === 0) flashError("Those numbers are already logged on this street.");
       else if (added > 1) flashError(`Added ${added} houses.`);
     } catch {
@@ -217,6 +291,38 @@ export function CanvassScreen({
             {canvass.streetCount} street{canvass.streetCount === 1 ? "" : "s"} · {canvass.doorCount} door
             {canvass.doorCount === 1 ? "" : "s"}
           </div>
+          {editingLocation ? (
+            <div className="flex items-center gap-1.5 mt-1">
+              <input
+                autoFocus
+                value={cityDraft}
+                onChange={(e) => setCityDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitLocation();
+                  if (e.key === "Escape") setEditingLocation(false);
+                }}
+                placeholder="City"
+                className="w-20 text-xs border-b-2 border-black bg-transparent outline-none"
+              />
+              <input
+                value={stateDraft}
+                onChange={(e) => setStateDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitLocation();
+                  if (e.key === "Escape") setEditingLocation(false);
+                }}
+                onBlur={commitLocation}
+                placeholder="State"
+                className="w-14 text-xs border-b-2 border-black bg-transparent outline-none"
+              />
+            </div>
+          ) : (
+            <button onClick={startEditLocation} className="text-xs text-gray-400 mt-0.5 underline underline-offset-2">
+              {canvass.city || canvass.state
+                ? [canvass.city, canvass.state].filter(Boolean).join(", ")
+                : "Set city/state for map pins"}
+            </button>
+          )}
         </div>
         <button
           onClick={() => {
@@ -282,42 +388,80 @@ export function CanvassScreen({
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
-        <StreetNav
-          streets={streets}
-          activeStreetId={activeStreetId}
-          onSelect={setActiveStreetId}
-          onAdd={handleAddStreet}
-          onRename={(id, name) => renameStreet(campaignId, canvassId, id, name).catch(() => flashError("Couldn't rename street."))}
-          onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
-        />
+      <div className="flex border-2 border-black rounded-lg overflow-hidden mx-4 mb-3 text-xs font-bold">
+        <button
+          onClick={() => setViewMode("list")}
+          className={"flex-1 py-2 " + (viewMode === "list" ? "bg-black text-white" : "bg-white")}
+        >
+          LIST
+        </button>
+        <button
+          onClick={() => setViewMode("map")}
+          className={
+            "flex-1 py-2 border-l-2 border-black flex items-center justify-center gap-1.5 " +
+            (viewMode === "map" ? "bg-black text-white" : "bg-white")
+          }
+        >
+          <MapIcon size={13} strokeWidth={2.5} /> MAP
+        </button>
+      </div>
 
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-4 pt-3">
-            <HouseList
-              street={activeStreet}
-              houses={activeHouses}
-              expandedHouseId={expandedHouseId}
-              onToggleExpand={(id) => setExpandedHouseId((cur) => (cur === id ? null : id))}
-              onStatusChange={(id, status) => updateActiveHouse(id, { status })}
-              onLawnSignToggle={(id) => {
-                const h = activeHouses.find((x) => x.id === id);
-                if (h) updateActiveHouse(id, { lawnSign: !h.lawnSign });
-              }}
-              onRevisitToggle={(id) => {
-                const h = activeHouses.find((x) => x.id === id);
-                if (h) updateActiveHouse(id, { revisit: !h.revisit });
-              }}
-              onNumberChange={(id, number) => updateActiveHouse(id, { number })}
-              onNotesChange={(id, notes) => updateActiveHouse(id, { notes })}
-              onDelete={(id) => {
-                const h = activeHouses.find((x) => x.id === id);
-                setConfirmDelete({ type: "house", id, label: `house ${h?.number ?? ""}` });
-              }}
-            />
+      <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
+        {viewMode === "list" ? (
+          <StreetNav
+            streets={streets}
+            activeStreetId={activeStreetId}
+            onSelect={setActiveStreetId}
+            onAdd={handleAddStreet}
+            onRename={(id, name) => renameStreet(campaignId, canvassId, id, name).catch(() => flashError("Couldn't rename street."))}
+            onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
+          />
+        ) : (
+          <StreetNav
+            streets={streets}
+            activeStreetId={mapStreetId}
+            onSelect={setMapStreetId}
+            onAdd={handleAddStreet}
+            onRename={(id, name) => renameStreet(campaignId, canvassId, id, name).catch(() => flashError("Couldn't rename street."))}
+            onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
+            allowAll
+          />
+        )}
+
+        {viewMode === "list" ? (
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-4 pt-3">
+              <HouseList
+                street={activeStreet}
+                houses={activeHouses}
+                expandedHouseId={expandedHouseId}
+                onToggleExpand={(id) => setExpandedHouseId((cur) => (cur === id ? null : id))}
+                onStatusChange={(id, status) => updateActiveHouse(id, { status })}
+                onLawnSignToggle={(id) => {
+                  const h = activeHouses.find((x) => x.id === id);
+                  if (h) updateActiveHouse(id, { lawnSign: !h.lawnSign });
+                }}
+                onRevisitToggle={(id) => {
+                  const h = activeHouses.find((x) => x.id === id);
+                  if (h) updateActiveHouse(id, { revisit: !h.revisit });
+                }}
+                onNumberChange={(id, number) => updateActiveHouse(id, { number })}
+                onNotesChange={(id, notes) => updateActiveHouse(id, { notes })}
+                onDelete={(id) => {
+                  const h = activeHouses.find((x) => x.id === id);
+                  setConfirmDelete({ type: "house", id, label: `house ${h?.number ?? ""}` });
+                }}
+              />
+            </div>
+            {activeStreet && <AddHouseBar onAdd={handleAddHouses} />}
           </div>
-          {activeStreet && <AddHouseBar onAdd={handleAddHouses} />}
-        </div>
+        ) : loadingMapHouses ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
+          </div>
+        ) : (
+          <MapView houses={mapHouses} />
+        )}
       </div>
 
       {confirmDelete && (

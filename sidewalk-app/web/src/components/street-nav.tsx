@@ -117,13 +117,15 @@ export function StreetNav({
   onAdd,
   onRename,
   onDeleteRequest,
+  allowAll = false,
 }: {
   streets: Street[];
   activeStreetId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   onAdd: (name: string) => void;
   onRename: (id: string, name: string) => void;
   onDeleteRequest: (street: Street) => void;
+  allowAll?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -131,6 +133,17 @@ export function StreetNav({
     <>
       {/* Mobile: horizontal chip scroller */}
       <div className="md:hidden flex items-center gap-2 px-4 py-3 overflow-x-auto whitespace-nowrap border-b border-gray-200">
+        {allowAll && (
+          <button
+            onClick={() => onSelect(null)}
+            className={
+              "flex-shrink-0 px-3.5 py-2 text-sm font-bold rounded-full border-2 border-black " +
+              (activeStreetId === null ? "bg-black text-white" : "bg-white text-black")
+            }
+          >
+            ALL
+          </button>
+        )}
         {streets.map((s) =>
           editingId === s.id ? (
             <StreetEditField
@@ -171,6 +184,17 @@ export function StreetNav({
       {/* Tablet/desktop: persistent sidebar list */}
       <div className="hidden md:flex md:flex-col md:w-72 md:flex-shrink-0 border-r-2 border-black overflow-y-auto">
         <div className="p-3 flex flex-col gap-1.5">
+          {allowAll && (
+            <button
+              onClick={() => onSelect(null)}
+              className={
+                "text-left px-3.5 py-2.5 rounded-lg border-2 border-black font-bold text-sm " +
+                (activeStreetId === null ? "bg-black text-white" : "bg-white text-black")
+              }
+            >
+              All streets
+            </button>
+          )}
           {streets.map((s) =>
             editingId === s.id ? (
               <StreetEditField

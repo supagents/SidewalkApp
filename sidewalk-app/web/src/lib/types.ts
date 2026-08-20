@@ -8,6 +8,9 @@ export type House = {
   revisit: boolean;
   notes: string;
   createdAt: number;
+  address: string;
+  lat: number | null;
+  lng: number | null;
 };
 
 export type Street = {
@@ -27,6 +30,8 @@ export type Canvass = {
   doorCount: number;
   shareable: boolean;
   shareCode: string | null;
+  city: string;
+  state: string;
 };
 
 export type CanvassExport = {

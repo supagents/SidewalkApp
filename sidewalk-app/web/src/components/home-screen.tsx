@@ -16,6 +16,8 @@ export function HomeScreen({ campaignId, onOpenCanvass }: { campaignId: string; 
   const [canvasses, setCanvasses] = useState<Canvass[]>([]);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newCity, setNewCity] = useState("");
+  const [newState, setNewState] = useState("");
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
 
@@ -30,8 +32,10 @@ export function HomeScreen({ campaignId, onOpenCanvass }: { campaignId: string; 
     const name = newName.trim();
     if (!name || !user) return;
     try {
-      const id = await createCanvass(campaignId, name, user.uid);
+      const id = await createCanvass(campaignId, name, user.uid, newCity.trim(), newState.trim());
       setNewName("");
+      setNewCity("");
+      setNewState("");
       setCreating(false);
       onOpenCanvass(id);
     } catch {
@@ -94,8 +98,28 @@ export function HomeScreen({ campaignId, onOpenCanvass }: { campaignId: string; 
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               placeholder="Name this canvass (e.g. Elm St loop)"
-              className="w-full outline-none text-base mb-3"
+              className="w-full outline-none text-base mb-2.5"
             />
+            <div className="flex gap-2 mb-3">
+              <input
+                value={newCity}
+                onChange={(e) => setNewCity(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                placeholder="City"
+                className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-black"
+              />
+              <input
+                value={newState}
+                onChange={(e) => setNewState(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                placeholder="State"
+                className="w-20 border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-black"
+              />
+            </div>
+            <div className="text-xs text-gray-400 mb-3 leading-relaxed">
+              City/state power the map view — each house&apos;s address is built from its street plus
+              this. You can set it later too.
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handleCreate}
@@ -108,6 +132,8 @@ export function HomeScreen({ campaignId, onOpenCanvass }: { campaignId: string; 
                 onClick={() => {
                   setCreating(false);
                   setNewName("");
+                  setNewCity("");
+                  setNewState("");
                 }}
                 className="px-4 py-2.5 border-2 border-black rounded-lg font-bold"
               >

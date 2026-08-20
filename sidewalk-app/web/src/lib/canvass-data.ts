@@ -58,13 +58,21 @@ export function subscribeCanvasses(campaignId: string, cb: (canvasses: Canvass[]
           doorCount: data.doorCount ?? 0,
           shareable: !!data.shareable,
           shareCode: data.shareCode ?? null,
+          city: data.city ?? "",
+          state: data.state ?? "",
         };
       })
     );
   });
 }
 
-export async function createCanvass(campaignId: string, name: string, createdBy: string) {
+export async function createCanvass(
+  campaignId: string,
+  name: string,
+  createdBy: string,
+  city: string,
+  state: string
+) {
   const id = newId(canvassesCol(campaignId));
   await setDoc(canvassRef(campaignId, id), {
     name,
@@ -75,12 +83,18 @@ export async function createCanvass(campaignId: string, name: string, createdBy:
     doorCount: 0,
     shareable: false,
     shareCode: null,
+    city,
+    state,
   });
   return id;
 }
 
 export async function renameCanvass(campaignId: string, canvassId: string, name: string) {
   await updateDoc(canvassRef(campaignId, canvassId), { name, updatedAt: serverTimestamp() });
+}
+
+export async function updateCanvassLocation(campaignId: string, canvassId: string, city: string, state: string) {
+  await updateDoc(canvassRef(campaignId, canvassId), { city, state, updatedAt: serverTimestamp() });
 }
 
 // ---------- Streets ----------
@@ -156,21 +170,36 @@ export function subscribeHouses(
           revisit: !!data.revisit,
           notes: data.notes ?? "",
           createdAt: data.createdAt?.toMillis?.() ?? 0,
+          address: data.address ?? "",
+          lat: data.lat ?? null,
+          lng: data.lng ?? null,
         };
       })
     );
   });
 }
 
+export function buildHouseAddress(number: string, streetName: string, city: string, state: string): string {
+  return [`${number} ${streetName}`, city, state].filter(Boolean).join(", ");
+}
+
 // Accepts one number or many, comma/whitespace-separated (or one per
 // line, e.g. from a pasted spreadsheet column). Skips numbers already
 // logged on this street. Returns how many were actually added.
+//
+// Each house's address is built here from parts already known to the
+// app (street name + the canvass's city/state) instead of asking the
+// volunteer to type a full address — lat/lng start unset and get
+// filled in asynchronously by the geocodeHouseOnCreate Cloud Function.
 export async function addHouses(
   campaignId: string,
   canvassId: string,
   streetId: string,
   raw: string,
-  existingNumbers: Set<string>
+  existingNumbers: Set<string>,
+  streetName: string,
+  city: string,
+  state: string
 ): Promise<number> {
   const tokens = raw
     .split(/[\s,]+/)
@@ -198,6 +227,9 @@ export async function addHouses(
       revisit: false,
       notes: "",
       createdAt: serverTimestamp(),
+      address: buildHouseAddress(number, streetName, city, state),
+      lat: null,
+      lng: null,
     });
   });
   batch.update(streetRef(campaignId, canvassId, streetId), { houseCount: increment(toAdd.length) });
@@ -247,6 +279,9 @@ async function fetchCanvassExport(campaignId: string, canvassId: string, name: s
           revisit: !!data.revisit,
           notes: data.notes ?? "",
           createdAt: data.createdAt?.toMillis?.() ?? 0,
+          address: data.address ?? "",
+          lat: data.lat ?? null,
+          lng: data.lng ?? null,
         };
       });
       return { name: streetDoc.data().name as string, houses };
@@ -280,6 +315,8 @@ export function subscribeCanvass(campaignId: string, canvassId: string, cb: (can
       doorCount: data.doorCount ?? 0,
       shareable: !!data.shareable,
       shareCode: data.shareCode ?? null,
+      city: data.city ?? "",
+      state: data.state ?? "",
     });
   });
 }
