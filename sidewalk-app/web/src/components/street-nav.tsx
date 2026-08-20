@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import type { Street } from "@/lib/types";
 
 function AddStreetChip({ onAdd }: { onAdd: (name: string) => void }) {
@@ -63,13 +63,11 @@ function StreetEditField({
   street,
   onCommit,
   onCancel,
-  onDelete,
   variant,
 }: {
   street: Street;
   onCommit: (name: string) => void;
   onCancel: () => void;
-  onDelete: () => void;
   variant: "chip" | "row";
 }) {
   const [draft, setDraft] = useState(street.name);
@@ -79,34 +77,23 @@ function StreetEditField({
     else onCancel();
   };
   return (
-    <div
+    <input
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") onCancel();
+      }}
+      onBlur={commit}
       className={
-        variant === "chip"
-          ? "flex-shrink-0 flex items-center gap-1 border-2 border-black rounded-full pl-3 pr-1.5 py-1 bg-white"
-          : "flex items-center gap-1 border-2 border-black rounded-lg pl-3 pr-1.5 py-1.5 bg-white"
+        "outline-none text-sm bg-transparent font-bold " +
+        (variant === "chip"
+          ? "w-24 flex-shrink-0 rounded-full border-2 border-black px-3 py-1.5"
+          : "flex-1 min-w-0 rounded-lg border-2 border-black px-3 py-2")
       }
-    >
-      <input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onFocus={(e) => e.target.select()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") onCancel();
-        }}
-        onBlur={commit}
-        className={"outline-none text-sm bg-transparent font-bold " + (variant === "chip" ? "w-28" : "flex-1 min-w-0")}
-      />
-      <button
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onDelete}
-        className="w-6 h-6 rounded-full text-gray-400 flex items-center justify-center flex-shrink-0"
-        title="Delete street"
-      >
-        <X size={14} />
-      </button>
-    </div>
+    />
   );
 }
 
@@ -144,8 +131,9 @@ export function StreetNav({
             ALL
           </button>
         )}
-        {streets.map((s) =>
-          editingId === s.id ? (
+        {streets.map((s) => {
+          const active = activeStreetId === s.id;
+          return editingId === s.id ? (
             <StreetEditField
               key={s.id}
               street={s}
@@ -155,29 +143,39 @@ export function StreetNav({
                 setEditingId(null);
               }}
               onCancel={() => setEditingId(null)}
-              onDelete={() => onDeleteRequest(s)}
             />
           ) : (
-            <button
+            <div
               key={s.id}
-              onClick={() => (activeStreetId === s.id ? setEditingId(s.id) : onSelect(s.id))}
               className={
-                "flex-shrink-0 px-3.5 py-2 text-sm font-bold rounded-full border-2 border-black flex items-center gap-1.5 " +
-                (activeStreetId === s.id ? "bg-black text-white" : "bg-white text-black")
+                "flex-shrink-0 flex items-center gap-1 rounded-full border-2 border-black pl-3.5 pr-1 py-1 " +
+                (active ? "bg-black text-white" : "bg-white text-black")
               }
             >
-              {s.name}
-              <span
-                className={
-                  "text-xs font-semibold px-1.5 py-0.5 rounded-full " +
-                  (activeStreetId === s.id ? "bg-white text-black" : "bg-gray-100 text-gray-500")
-                }
+              <button
+                onClick={() => (active ? setEditingId(s.id) : onSelect(s.id))}
+                className="flex items-center gap-1.5 text-sm font-bold"
               >
-                {s.houseCount}
-              </span>
-            </button>
-          )
-        )}
+                {s.name}
+                <span
+                  className={
+                    "text-xs font-semibold px-1.5 py-0.5 rounded-full " +
+                    (active ? "bg-white text-black" : "bg-gray-100 text-gray-500")
+                  }
+                >
+                  {s.houseCount}
+                </span>
+              </button>
+              <button
+                onClick={() => onDeleteRequest(s)}
+                title="Delete street"
+                className={"w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 " + (active ? "text-gray-300" : "text-gray-400")}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          );
+        })}
         <AddStreetChip onAdd={onAdd} />
       </div>
 
@@ -195,8 +193,9 @@ export function StreetNav({
               All streets
             </button>
           )}
-          {streets.map((s) =>
-            editingId === s.id ? (
+          {streets.map((s) => {
+            const active = activeStreetId === s.id;
+            return editingId === s.id ? (
               <StreetEditField
                 key={s.id}
                 street={s}
@@ -206,29 +205,39 @@ export function StreetNav({
                   setEditingId(null);
                 }}
                 onCancel={() => setEditingId(null)}
-                onDelete={() => onDeleteRequest(s)}
               />
             ) : (
-              <button
+              <div
                 key={s.id}
-                onClick={() => (activeStreetId === s.id ? setEditingId(s.id) : onSelect(s.id))}
                 className={
-                  "text-left px-3.5 py-2.5 rounded-lg border-2 border-black font-bold text-sm flex items-center justify-between gap-2 " +
-                  (activeStreetId === s.id ? "bg-black text-white" : "bg-white text-black")
+                  "flex items-center gap-1 rounded-lg border-2 border-black pl-1 " +
+                  (active ? "bg-black text-white" : "bg-white text-black")
                 }
               >
-                <span className="truncate">{s.name}</span>
-                <span
-                  className={
-                    "text-xs font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 " +
-                    (activeStreetId === s.id ? "bg-white text-black" : "bg-gray-100 text-gray-500")
-                  }
+                <button
+                  onClick={() => (active ? setEditingId(s.id) : onSelect(s.id))}
+                  className="flex-1 min-w-0 text-left px-2.5 py-2.5 font-bold text-sm flex items-center justify-between gap-2"
                 >
-                  {s.houseCount}
-                </span>
-              </button>
-            )
-          )}
+                  <span className="truncate">{s.name}</span>
+                  <span
+                    className={
+                      "text-xs font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 " +
+                      (active ? "bg-white text-black" : "bg-gray-100 text-gray-500")
+                    }
+                  >
+                    {s.houseCount}
+                  </span>
+                </button>
+                <button
+                  onClick={() => onDeleteRequest(s)}
+                  title="Delete street"
+                  className={"w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mr-1 " + (active ? "text-gray-300" : "text-gray-400")}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            );
+          })}
           <AddStreetRow onAdd={onAdd} />
         </div>
       </div>
