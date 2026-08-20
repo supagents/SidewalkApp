@@ -5,7 +5,7 @@ import { ChunkyBox } from "@/components/chunky-box";
 import { Logo } from "@/components/logo";
 import { Toast } from "@/components/toast";
 import { auth } from "@/lib/firebase";
-import { logOut, resendVerificationEmail } from "@/lib/auth";
+import { authErrorMessage, logOut, resendVerificationEmail } from "@/lib/auth";
 
 export function VerifyEmailScreen() {
   const [checking, setChecking] = useState(false);
@@ -26,8 +26,8 @@ export function VerifyEmailScreen() {
       } else {
         flash("Still not verified — check your inbox (and spam folder).");
       }
-    } catch {
-      flash("Something went wrong. Try again.");
+    } catch (err) {
+      flash(authErrorMessage(err));
     } finally {
       setChecking(false);
     }
@@ -38,8 +38,8 @@ export function VerifyEmailScreen() {
     try {
       await resendVerificationEmail();
       flash("Verification email sent.");
-    } catch {
-      flash("Couldn't send the email. Try again shortly.");
+    } catch (err) {
+      flash(authErrorMessage(err));
     } finally {
       setResending(false);
     }
