@@ -79,3 +79,46 @@ exports.onCampaignCreated = onDocumentCreated('campaigns/{campaignId}', async (e
     joinedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 });
+
+// ------------------------------------------------------------
+// joinCanvassByCode: call after signing in anonymously.
+//   const joinCanvassByCode = httpsCallable(functions, 'joinCanvassByCode');
+//   const { campaignId, canvassId, canvassName } =
+//     (await joinCanvassByCode({ code, displayName })).data;
+//
+// Runs with Admin privileges to write campaigns/{id}/canvasses/{id}/
+// guests/{uid}, which clients can never write directly. That doc is
+// what the security rules check to grant the guest read/write access
+// to this ONE canvass — not the rest of the campaign.
+// ------------------------------------------------------------
+exports.joinCanvassByCode = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to join a canvass.');
+  }
+
+  const code = (request.data.code || '').trim().toUpperCase();
+  const displayName = (request.data.displayName || '').trim();
+  if (!code || !displayName) {
+    throw new HttpsError('invalid-argument', 'Missing code or display name.');
+  }
+
+  const codeRef = db.doc(`shareCodes/${code}`);
+  const codeSnap = await codeRef.get();
+  if (!codeSnap.exists) {
+    throw new HttpsError('not-found', "That code doesn't match an active canvass.");
+  }
+  const { campaignId, canvassId } = codeSnap.data();
+
+  const canvassRef = db.doc(`campaigns/${campaignId}/canvasses/${canvassId}`);
+  const canvassSnap = await canvassRef.get();
+  if (!canvassSnap.exists || !canvassSnap.data().shareable) {
+    throw new HttpsError('failed-precondition', "That canvass isn't shared anymore.");
+  }
+
+  await canvassRef.collection('guests').doc(request.auth.uid).set({
+    displayName,
+    joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { campaignId, canvassId, canvassName: canvassSnap.data().name };
+});

@@ -12,11 +12,20 @@
 //   /campaigns/{campaignId}/invites/{inviteId}
 //     email, role, invitedBy, token, status, createdAt, expiresAt
 //   /campaigns/{campaignId}/canvasses/{canvassId}
-//     name, createdBy, createdAt, updatedAt
+//     name, createdBy, createdAt, updatedAt, shareable, shareCode
 //     /streets/{streetId}
 //       name, position
 //       /houses/{houseId}
 //         number, status, lawnSign, notes, updatedBy, updatedAt
+//     /guests/{uid}
+//       displayName, joinedAt
+//       (written only by the joinCanvassByCode Cloud Function — grants
+//       one anonymous-auth user access to this ONE canvass, not the
+//       whole campaign)
+// /shareCodes/{code}
+//     campaignId, canvassId, createdBy, createdAt
+//     (join-code lookup for the share flow; the code itself is the doc
+//     ID, so it's only reachable if you already know it)
 // ============================================================
 
 rules_version = '2';
@@ -36,6 +45,15 @@ service cloud.firestore {
     function isManager(campaignId) {
       return isSignedIn() &&
         get(/databases/$(database)/documents/campaigns/$(campaignId)/members/$(request.auth.uid)).data.role == 'manager';
+    }
+
+    function isCanvassGuest(campaignId, canvassId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/campaigns/$(campaignId)/canvasses/$(canvassId)/guests/$(request.auth.uid));
+    }
+
+    function hasCanvassAccess(campaignId, canvassId) {
+      return isMember(campaignId) || isCanvassGuest(campaignId, canvassId);
     }
 
     // ---------- campaigns ----------
@@ -62,18 +80,39 @@ service cloud.firestore {
 
       // ---------- canvasses ----------
       match /canvasses/{canvassId} {
-        allow read, write: if isMember(campaignId);
+        allow read, write: if hasCanvassAccess(campaignId, canvassId);
 
         // ---------- streets ----------
         match /streets/{streetId} {
-          allow read, write: if isMember(campaignId);
+          allow read, write: if hasCanvassAccess(campaignId, canvassId);
 
           // ---------- houses ----------
           match /houses/{houseId} {
-            allow read, write: if isMember(campaignId);
+            allow read, write: if hasCanvassAccess(campaignId, canvassId);
           }
         }
+
+        // ---------- guests ----------
+        // Written only by the joinCanvassByCode Cloud Function (Admin
+        // SDK, bypasses these rules) — never directly by a client. This
+        // scopes a guest's access to this one canvass, not the whole
+        // campaign, unlike /members.
+        match /guests/{uid} {
+          allow read, write: if false;
+        }
       }
+    }
+
+    // ---------- shareCodes ----------
+    // Doc ID is the code itself, so it's only reachable if you already
+    // know it — there's no way to list/enumerate codes. A manager
+    // creates one to turn sharing on; joinCanvassByCode (Cloud
+    // Function) reads it to resolve a code a guest typed in.
+    match /shareCodes/{code} {
+      allow read: if isSignedIn();
+      allow create: if isManager(request.resource.data.campaignId)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow delete: if isManager(resource.data.campaignId);
     }
 
     // ---------- profiles ----------

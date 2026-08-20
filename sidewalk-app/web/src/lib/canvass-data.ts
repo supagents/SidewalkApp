@@ -56,6 +56,8 @@ export function subscribeCanvasses(campaignId: string, cb: (canvasses: Canvass[]
           updatedAt: data.updatedAt?.toMillis?.() ?? 0,
           streetCount: data.streetCount ?? 0,
           doorCount: data.doorCount ?? 0,
+          shareable: !!data.shareable,
+          shareCode: data.shareCode ?? null,
         };
       })
     );
@@ -71,6 +73,8 @@ export async function createCanvass(campaignId: string, name: string, createdBy:
     updatedAt: serverTimestamp(),
     streetCount: 0,
     doorCount: 0,
+    shareable: false,
+    shareCode: null,
   });
   return id;
 }
@@ -274,6 +278,8 @@ export function subscribeCanvass(campaignId: string, canvassId: string, cb: (can
       updatedAt: data.updatedAt?.toMillis?.() ?? 0,
       streetCount: data.streetCount ?? 0,
       doorCount: data.doorCount ?? 0,
+      shareable: !!data.shareable,
+      shareCode: data.shareCode ?? null,
     });
   });
 }

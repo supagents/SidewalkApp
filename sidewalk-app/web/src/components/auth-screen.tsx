@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChunkyBox } from "@/components/chunky-box";
 import { Logo } from "@/components/logo";
 import { Toast } from "@/components/toast";
+import { JoinScreen } from "@/components/join-screen";
 import { authErrorMessage, logIn, signUp } from "@/lib/auth";
 
 const inputClass =
@@ -11,6 +12,7 @@ const inputClass =
 const labelClass = "block text-xs uppercase tracking-widest text-gray-500 mb-2 font-semibold";
 
 export function AuthScreen() {
+  const [screen, setScreen] = useState<"auth" | "join">("auth");
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,6 +50,10 @@ export function AuthScreen() {
       setBusy(false);
     }
   };
+
+  if (screen === "join") {
+    return <JoinScreen onBack={() => setScreen("auth")} />;
+  }
 
   return (
     <div className="flex flex-col items-center justify-center px-6 flex-1">
@@ -120,6 +126,13 @@ export function AuthScreen() {
             you can start canvassing.
           </div>
         )}
+
+        <button
+          onClick={() => setScreen("join")}
+          className="w-full text-center text-sm text-gray-400 mt-6 underline underline-offset-2"
+        >
+          Have a canvass code? Join instead
+        </button>
       </div>
       <Toast message={error} />
     </div>

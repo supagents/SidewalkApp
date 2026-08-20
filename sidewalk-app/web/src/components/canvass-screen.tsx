@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, BarChart3, Download } from "lucide-react";
+import { ArrowLeft, BarChart3, Download, Share2 } from "lucide-react";
 import {
   addHouses,
   addStreet,
@@ -22,16 +22,21 @@ import { HouseList } from "@/components/house-list";
 import { AddHouseBar } from "@/components/add-house-bar";
 import { ConfirmDeleteModal, type ConfirmDeleteTarget } from "@/components/confirm-delete-modal";
 import { StatsBar } from "@/components/stats-bar";
+import { SharePanel } from "@/components/share-panel";
 import { Toast } from "@/components/toast";
+import { logOut } from "@/lib/auth";
+import { clearGuestSession } from "@/lib/share";
 
 export function CanvassScreen({
   campaignId,
   canvassId,
   onBack,
+  isGuest = false,
 }: {
   campaignId: string;
   canvassId: string;
   onBack: () => void;
+  isGuest?: boolean;
 }) {
   const [canvass, setCanvass] = useState<Canvass | null>(null);
   const [streets, setStreets] = useState<Street[]>([]);
@@ -39,6 +44,7 @@ export function CanvassScreen({
   const [activeHouses, setActiveHouses] = useState<House[]>([]);
   const [expandedHouseId, setExpandedHouseId] = useState<string | null>(null);
   const [statsPanelOpen, setStatsPanelOpen] = useState(false);
+  const [sharePanelOpen, setSharePanelOpen] = useState(false);
   const [statsScope, setStatsScope] = useState<"street" | "canvass">("street");
   const [canvassWideHouses, setCanvassWideHouses] = useState<House[] | null>(null);
   const [loadingCanvassStats, setLoadingCanvassStats] = useState(false);
@@ -174,9 +180,21 @@ export function CanvassScreen({
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="px-4 pt-6 pb-3 flex items-center gap-3">
-        <button onClick={onBack} className="p-1.5 -ml-1.5 border-2 border-black rounded-lg bg-white">
-          <ArrowLeft size={18} strokeWidth={2.5} />
-        </button>
+        {isGuest ? (
+          <button
+            onClick={() => {
+              clearGuestSession();
+              logOut();
+            }}
+            className="text-xs font-semibold text-gray-500 underline underline-offset-2 flex-shrink-0"
+          >
+            Leave
+          </button>
+        ) : (
+          <button onClick={onBack} className="p-1.5 -ml-1.5 border-2 border-black rounded-lg bg-white">
+            <ArrowLeft size={18} strokeWidth={2.5} />
+          </button>
+        )}
         <div className="min-w-0 flex-1">
           {editingName ? (
             <input
@@ -201,12 +219,27 @@ export function CanvassScreen({
           </div>
         </div>
         <button
-          onClick={() => setStatsPanelOpen((v) => !v)}
+          onClick={() => {
+            setStatsPanelOpen((v) => !v);
+            setSharePanelOpen(false);
+          }}
           title="Results"
           className={"p-1.5 border-2 border-black rounded-lg flex-shrink-0 " + (statsPanelOpen ? "bg-black text-white" : "bg-white")}
         >
           <BarChart3 size={18} strokeWidth={2.5} />
         </button>
+        {!isGuest && (
+          <button
+            onClick={() => {
+              setSharePanelOpen((v) => !v);
+              setStatsPanelOpen(false);
+            }}
+            title="Share"
+            className={"p-1.5 border-2 border-black rounded-lg flex-shrink-0 " + (sharePanelOpen ? "bg-black text-white" : "bg-white")}
+          >
+            <Share2 size={18} strokeWidth={2.5} />
+          </button>
+        )}
         <button
           onClick={handleExport}
           disabled={exporting}
@@ -216,6 +249,10 @@ export function CanvassScreen({
           <Download size={18} strokeWidth={2.5} />
         </button>
       </div>
+
+      {sharePanelOpen && !isGuest && (
+        <SharePanel campaignId={campaignId} canvass={canvass} createdBy={canvass.createdBy} onError={flashError} />
+      )}
 
       {statsPanelOpen && (
         <div className="mx-4 mb-3 p-3.5 border-2 border-black rounded-xl bg-white">

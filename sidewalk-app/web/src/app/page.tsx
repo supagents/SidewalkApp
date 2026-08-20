@@ -2,6 +2,7 @@
 
 import { AuthScreen } from "@/components/auth-screen";
 import { AppShell } from "@/components/app-shell";
+import { GuestCanvassScreen } from "@/components/guest-canvass-screen";
 import { VerifyEmailScreen } from "@/components/verify-email-screen";
 import { useAuth } from "@/lib/auth-context";
 
@@ -17,6 +18,7 @@ export default function Home() {
   }
 
   if (!user) return <AuthScreen />;
+  if (user.isAnonymous) return <GuestCanvassScreen />;
   if (!user.emailVerified) return <VerifyEmailScreen />;
   return <AppShell />;
 }
