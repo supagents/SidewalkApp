@@ -1,7 +1,7 @@
 "use client";
 
 import { AuthScreen } from "@/components/auth-screen";
-import { SignedInHome } from "@/components/signed-in-home";
+import { AppShell } from "@/components/app-shell";
 import { VerifyEmailScreen } from "@/components/verify-email-screen";
 import { useAuth } from "@/lib/auth-context";
 
@@ -18,5 +18,5 @@ export default function Home() {
 
   if (!user) return <AuthScreen />;
   if (!user.emailVerified) return <VerifyEmailScreen />;
-  return <SignedInHome />;
+  return <AppShell />;
 }
