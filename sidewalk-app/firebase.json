@@ -1,0 +1,11 @@
+{
+  "firestore": {
+    "rules": "sidewalk-firestore.rules"
+  },
+  "functions": [
+    {
+      "source": "sidewalk-functions",
+      "codebase": "default"
+    }
+  ]
+}
