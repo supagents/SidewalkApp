@@ -5,7 +5,7 @@
 // ============================================================
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
@@ -124,13 +124,19 @@ exports.joinCanvassByCode = onCall(async (request) => {
 });
 
 // ------------------------------------------------------------
-// geocodeHouseOnCreate: fires whenever a house is added anywhere in
-// the app (single entry, bulk paste, or CSV/TXT import all end up
-// creating a house doc, so this catches every path with one trigger).
+// geocodeHouseOnWrite: fires on every create AND update of a house
+// (single entry, bulk paste, CSV/TXT import, or an address backfilled
+// onto a house that predates this field all end up here — a plain
+// onCreate trigger would miss that last case entirely, since it only
+// fires once, at the moment a doc is first created).
 //
 // Geocodes house.address via Nominatim (OpenStreetMap, no API key)
 // and writes lat/lng back onto the house doc. The map view only ever
-// reads these cached values — it never calls Nominatim itself.
+// reads these cached values — it never calls Nominatim itself. The
+// guard below (only run when address is set but lat isn't yet) is
+// what keeps this from re-geocoding on every unrelated edit — a
+// status toggle or a notes change updates the doc too, but leaves lat
+// already set, so it's a no-op here.
 //
 // Nominatim's usage policy caps free public API use at ~1 request/
 // second. Multiple houses can be created in the same instant (a bulk
@@ -174,26 +180,29 @@ async function geocode(address) {
   return { lat: parseFloat(lat), lng: parseFloat(lon) };
 }
 
-exports.geocodeHouseOnCreate = onDocumentCreated(
+exports.geocodeHouseOnWrite = onDocumentWritten(
   {
     document: 'campaigns/{campaignId}/canvasses/{canvassId}/streets/{streetId}/houses/{houseId}',
     maxInstances: 10,
     timeoutSeconds: 300,
   },
   async (event) => {
-    const house = event.data.data();
-    if (!house.address) return;
+    const after = event.data.after;
+    if (!after.exists) return; // deleted, nothing to geocode
+
+    const house = after.data();
+    if (!house.address || house.lat != null) return; // nothing to do, or already geocoded
 
     try {
       await waitForGeocodeSlot();
       const coords = await geocode(house.address);
       if (coords) {
-        await event.data.ref.update({ lat: coords.lat, lng: coords.lng });
+        await after.ref.update({ lat: coords.lat, lng: coords.lng });
       }
     } catch (err) {
       // Leave lat/lng unset — the house stays saved without a map pin
-      // until this is retried (a future re-geocode action, if added).
-      console.error(`Geocoding failed for house ${event.data.ref.path}:`, err.message);
+      // until this is retried (e.g. re-saving its address).
+      console.error(`Geocoding failed for house ${after.ref.path}:`, err.message);
     }
   }
 );
