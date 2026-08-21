@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { ArrowLeft, BarChart3, Download, MapIcon, Share2 } from "lucide-react";
+import { ArrowLeft, BarChart3, MapIcon, Share2 } from "lucide-react";
 import {
   addHouses,
   addStreet,
@@ -18,7 +18,7 @@ import {
   updateCanvassLocation,
   updateHouse,
 } from "@/lib/canvass-data";
-import { downloadCanvassCSV } from "@/lib/csv";
+import { downloadCanvassCSV, type ExportCategory } from "@/lib/csv";
 import type { Canvass, House, Street } from "@/lib/types";
 import { StreetNav } from "@/components/street-nav";
 import { HouseList } from "@/components/house-list";
@@ -26,6 +26,7 @@ import { AddHouseBar } from "@/components/add-house-bar";
 import { ConfirmDeleteModal, type ConfirmDeleteTarget } from "@/components/confirm-delete-modal";
 import { StatsBar } from "@/components/stats-bar";
 import { SharePanel } from "@/components/share-panel";
+import { ExportMenu } from "@/components/export-menu";
 import { Toast } from "@/components/toast";
 import { logOut } from "@/lib/auth";
 import { clearGuestSession } from "@/lib/share";
@@ -243,12 +244,12 @@ export function CanvassScreen({
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (category: ExportCategory) => {
     if (exporting) return;
     setExporting(true);
     try {
       const data = await exportCanvass(campaignId, canvass);
-      downloadCanvassCSV(data);
+      downloadCanvassCSV(data, category);
     } catch {
       flashError("Couldn't export. Try again.");
     } finally {
@@ -351,14 +352,7 @@ export function CanvassScreen({
             <Share2 size={18} strokeWidth={2.5} />
           </button>
         )}
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          title="Export CSV"
-          className="p-1.5 border-2 border-black rounded-lg bg-white flex-shrink-0 disabled:opacity-40"
-        >
-          <Download size={18} strokeWidth={2.5} />
-        </button>
+        <ExportMenu disabled={exporting} onExport={handleExport} />
       </div>
 
       {sharePanelOpen && !isGuest && (

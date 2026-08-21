@@ -1,5 +1,26 @@
 import { STATUS_LABEL } from "@/components/status-icons";
-import type { CanvassExport } from "@/lib/types";
+import type { CanvassExport, HouseStatus } from "@/lib/types";
+
+export type ExportCategory = { key: string; label: string; statuses: HouseStatus[] | null };
+
+export const EXPORT_CATEGORIES: ExportCategory[] = [
+  { key: "all", label: "All data", statuses: null },
+  { key: "support", label: "Supporters", statuses: ["support"] },
+  { key: "undecided", label: "Undecided", statuses: ["undecided"] },
+  { key: "against", label: "Not supporting", statuses: ["against"] },
+  { key: "not_home", label: "Not home", statuses: ["not_home"] },
+];
+
+function filterByStatus(canvass: CanvassExport, statuses: HouseStatus[] | null): CanvassExport {
+  if (!statuses) return canvass;
+  const allowed = new Set(statuses);
+  return {
+    name: canvass.name,
+    streets: canvass.streets
+      .map((s) => ({ name: s.name, houses: s.houses.filter((h) => h.status && allowed.has(h.status)) }))
+      .filter((s) => s.houses.length > 0),
+  };
+}
 
 function toCSV(canvass: CanvassExport): string {
   const rows: string[][] = [["Street", "House Number", "Status", "Lawn Sign", "Follow-up", "Notes"]];
@@ -50,9 +71,10 @@ function triggerDownload(csv: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function downloadCanvassCSV(canvass: CanvassExport) {
+export function downloadCanvassCSV(canvass: CanvassExport, category: ExportCategory = EXPORT_CATEGORIES[0]) {
   const safeName = (canvass.name || "sidewalk").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  triggerDownload(toCSV(canvass), `${safeName || "sidewalk"}.csv`);
+  const suffix = category.key === "all" ? "" : `-${category.key.replace(/_/g, "-")}`;
+  triggerDownload(toCSV(filterByStatus(canvass, category.statuses)), `${safeName || "sidewalk"}${suffix}.csv`);
 }
 
 export function downloadAllCSV(canvasses: CanvassExport[]) {
