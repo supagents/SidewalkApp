@@ -1,16 +1,34 @@
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  arrayUnion,
+  collection,
+  doc,
+  documentId,
+  getDoc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import type { Campaign } from "@/lib/types";
 
 // The Firestore schema (sidewalk-firestore.rules) requires every canvass to
 // live under a campaign, with access gated by campaigns/{id}/members/{uid}.
 // That membership doc is only ever written by the onCampaignCreated Cloud
 // Function (rules block direct client writes to it), so right after we
 // create a campaign there's a short window before we're actually a member.
-// This gives every signed-in user their own single personal campaign,
-// remembered on their profile doc, and waits out that window once.
+// campaignIds on the user's profile doc is what lets the client list "my
+// campaigns" without a collection-group query (member docs don't carry a
+// queryable uid field).
 
 const MEMBERSHIP_POLL_INTERVAL_MS = 400;
 const MEMBERSHIP_POLL_TIMEOUT_MS = 15000;
+
+function profileRef(uid: string) {
+  return doc(db, "profiles", uid);
+}
 
 async function waitForMembership(campaignId: string, uid: string) {
   const memberRef = doc(db, "campaigns", campaignId, "members", uid);
@@ -31,23 +49,76 @@ async function waitForMembership(campaignId: string, uid: string) {
   throw new Error("Timed out setting up your campaign. Try refreshing.");
 }
 
-export async function ensurePersonalCampaign(uid: string): Promise<string> {
-  const profileRef = doc(db, "profiles", uid);
-  const profileSnap = await getDoc(profileRef);
-  const existingId = profileSnap.exists() ? (profileSnap.data().personalCampaignId as string | undefined) : undefined;
-
-  if (existingId) {
-    await waitForMembership(existingId, uid);
-    return existingId;
+// Every account used to get exactly one auto-created "personal campaign",
+// remembered as profiles/{uid}.personalCampaignId. Now an account can have
+// several, tracked as profiles/{uid}.campaignIds — this folds a pre-existing
+// personalCampaignId into that array (once) so nobody loses access to a
+// campaign they already had.
+async function getOwnedCampaignIds(uid: string): Promise<string[]> {
+  const snap = await getDoc(profileRef(uid));
+  if (!snap.exists()) return [];
+  const data = snap.data();
+  if (Array.isArray(data.campaignIds)) return data.campaignIds as string[];
+  if (data.personalCampaignId) {
+    const ids = [data.personalCampaignId as string];
+    await updateDoc(profileRef(uid), { campaignIds: ids }).catch(() => {});
+    return ids;
   }
+  return [];
+}
 
-  const campaignRef = doc(db, "campaigns", crypto.randomUUID());
-  await setDoc(campaignRef, {
-    name: "My Campaign",
-    createdBy: uid,
-    createdAt: serverTimestamp(),
+export function subscribeCampaigns(uid: string, cb: (campaigns: Campaign[]) => void) {
+  let unsubscribeQuery: (() => void) | null = null;
+  let cancelled = false;
+
+  getOwnedCampaignIds(uid).then((ids) => {
+    if (cancelled) return;
+    if (ids.length === 0) {
+      cb([]);
+      return;
+    }
+    const q = query(collection(db, "campaigns"), where(documentId(), "in", ids));
+    unsubscribeQuery = onSnapshot(q, (snap) => {
+      const campaigns = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.name,
+          createdBy: data.createdBy,
+          createdAt: data.createdAt?.toMillis?.() ?? 0,
+        };
+      });
+      campaigns.sort((a, b) => b.createdAt - a.createdAt);
+      cb(campaigns);
+    });
   });
-  await setDoc(profileRef, { personalCampaignId: campaignRef.id }, { merge: true });
+
+  return () => {
+    cancelled = true;
+    unsubscribeQuery?.();
+  };
+}
+
+export function subscribeCampaign(campaignId: string, cb: (campaign: Campaign | null) => void) {
+  return onSnapshot(doc(db, "campaigns", campaignId), (snap) => {
+    if (!snap.exists()) {
+      cb(null);
+      return;
+    }
+    const data = snap.data();
+    cb({
+      id: snap.id,
+      name: data.name,
+      createdBy: data.createdBy,
+      createdAt: data.createdAt?.toMillis?.() ?? 0,
+    });
+  });
+}
+
+export async function createCampaign(uid: string, name: string): Promise<string> {
+  const campaignRef = doc(collection(db, "campaigns"));
+  await setDoc(campaignRef, { name, createdBy: uid, createdAt: serverTimestamp() });
   await waitForMembership(campaignRef.id, uid);
+  await setDoc(profileRef(uid), { campaignIds: arrayUnion(campaignRef.id) }, { merge: true });
   return campaignRef.id;
 }

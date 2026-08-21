@@ -1,18 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Plus } from "lucide-react";
+import { ArrowLeft, Download, Plus } from "lucide-react";
 import { ChunkyBox } from "@/components/chunky-box";
-import { Logo } from "@/components/logo";
 import { Toast } from "@/components/toast";
 import { createCanvass, exportAllCanvasses, subscribeCanvasses } from "@/lib/canvass-data";
+import { subscribeCampaign } from "@/lib/campaign";
 import { downloadAllCSV } from "@/lib/csv";
-import { logOut } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
-import type { Canvass } from "@/lib/types";
+import type { Campaign, Canvass } from "@/lib/types";
 
-export function HomeScreen({ campaignId, onOpenCanvass }: { campaignId: string; onOpenCanvass: (id: string) => void }) {
+export function HomeScreen({
+  campaignId,
+  onOpenCanvass,
+  onBackToCampaigns,
+}: {
+  campaignId: string;
+  onOpenCanvass: (id: string) => void;
+  onBackToCampaigns: () => void;
+}) {
   const { user } = useAuth();
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [canvasses, setCanvasses] = useState<Canvass[]>([]);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -21,6 +29,7 @@ export function HomeScreen({ campaignId, onOpenCanvass }: { campaignId: string; 
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => subscribeCampaign(campaignId, setCampaign), [campaignId]);
   useEffect(() => subscribeCanvasses(campaignId, setCanvasses), [campaignId]);
 
   const flashError = (msg: string) => {
@@ -58,26 +67,24 @@ export function HomeScreen({ campaignId, onOpenCanvass }: { campaignId: string; 
 
   return (
     <div className="flex flex-col flex-1 w-full max-w-2xl mx-auto">
-      <div className="px-5 pt-7 pb-5 flex items-start justify-between">
-        <div>
-          <Logo />
-          <div className="text-xs text-gray-500 ml-5 mt-0.5">Hi {user?.email}</div>
+      <div className="px-4 pt-6 pb-5 flex items-center gap-3">
+        <button onClick={onBackToCampaigns} className="p-1.5 -ml-1.5 border-2 border-black rounded-lg bg-white flex-shrink-0">
+          <ArrowLeft size={18} strokeWidth={2.5} />
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="font-bold truncate">{campaign?.name ?? "…"}</div>
+          <div className="text-xs text-gray-500 uppercase tracking-wide">Campaign</div>
         </div>
-        <div className="flex items-center gap-2 mt-1 flex-shrink-0">
-          {canvasses.length > 0 && (
-            <button
-              onClick={handleExportAll}
-              disabled={exporting}
-              title="Export all canvasses"
-              className="p-1.5 border-2 border-black rounded-lg bg-white disabled:opacity-40"
-            >
-              <Download size={18} strokeWidth={2.5} />
-            </button>
-          )}
-          <button onClick={() => logOut()} title="Log out" className="text-xs font-semibold text-gray-500 underline underline-offset-2">
-            Log out
+        {canvasses.length > 0 && (
+          <button
+            onClick={handleExportAll}
+            disabled={exporting}
+            title="Export all canvasses"
+            className="p-1.5 border-2 border-black rounded-lg bg-white disabled:opacity-40 flex-shrink-0"
+          >
+            <Download size={18} strokeWidth={2.5} />
           </button>
-        </div>
+        )}
       </div>
 
       <div className="px-5 pb-3">

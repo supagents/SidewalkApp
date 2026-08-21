@@ -13,6 +13,13 @@ export type House = {
   lng: number | null;
 };
 
+export type Campaign = {
+  id: string;
+  name: string;
+  createdBy: string;
+  createdAt: number;
+};
+
 export type Street = {
   id: string;
   name: string;
