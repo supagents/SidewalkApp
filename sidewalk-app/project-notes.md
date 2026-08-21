@@ -73,7 +73,12 @@ Sign-in flow: campaign list (create/select) > that campaign's canvass
 list, each canvass showing street/door counts — DONE. An account can
 run canvasses for several different campaigns; each gets its own
 canvass list, gated by the same campaigns/{id}/members Firestore rules
-Create a canvass, rename it inline
+Create a campaign or canvass, rename either inline (tap the name in its
+own header)
+Delete a campaign or canvass — cascades through everything under it
+(streets/houses, or canvasses/streets/houses), gated behind re-entering
+the account password (Firebase reauthentication), not just a plain
+confirm
 Add streets to a canvass, rename them inline, delete with confirmation
 Add houses to a street: single entry, or bulk import via pasted list or
 CSV/TXT file upload, deduping against existing numbers
@@ -83,9 +88,12 @@ a lawn-sign toggle (custom icon, not a generic flag), a follow-up flag,
 and expandable notes
 Delete a house with confirmation
 Filter a street's house list to just follow-ups
-Results panel: stacked bar + percentages, toggle between "this street"
-and "whole canvass"
-CSV export, per-canvass and "export everything"
+Results panel: stacked bar + percentages (supporter/undecided/not
+supporting/not home, lawn signs, follow-ups), toggle between "this
+street" and "whole canvass"; the campaign page has its own results
+panel aggregating every canvass in the campaign (+ street count)
+CSV export, per-canvass (with per-status-category filters), and "export
+everything"
 Make a canvass shareable: generates a join code, guests join via that
 code + a display name (no account) and all their logging goes into that
 one shared canvass
