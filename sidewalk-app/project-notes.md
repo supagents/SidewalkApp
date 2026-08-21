@@ -25,10 +25,13 @@ on phone, tablet, or desktop — not primarily as an installed phone app.
 Build order should reflect that:
 Core web app (auth, canvassing features, responsive layout across screen
 sizes) — this is the priority.
-Home-screen installability (manifest.json, icons) — nice to have, quick
-to add, but not urgent. Do this after the core app is solid.
-Map, offline sync, and team dashboard — deliberately deferred until
-after a real campaign has used the lean version and given feedback.
+Home-screen installability (manifest.json, icons) — DONE. manifest.json,
+branded app icons (192/512/apple-touch/maskable), theme color, and a
+minimal service worker (no offline caching yet) are wired up in
+sidewalk-app/web.
+Map view — DONE (see below). Offline sync and team dashboard are
+still deliberately deferred until after a real campaign has used the
+lean version and given feedback.
 Layout should NOT just be the phone-width column from sidewalk.jsx
 stretched across a bigger screen. On tablet/desktop, make better use of
 the space — e.g. a persistent street list alongside the house list,
@@ -61,7 +64,8 @@ single-column layout can stay as the base/mobile-portrait case, but
 should reflow (e.g. wider content area, multi-column street/house
 layout, or a persistent sidebar for streets on wider screens) rather
 than just stretching the same narrow column across a big screen.
-Deploy to Vercel or Firebase Hosting.
+Deploy to Vercel or Firebase Hosting — NOT done yet, no hosting config
+in the repo. Next step once ready to ship.
 Features already designed in sidewalk.jsx (port all of these)
 Sign up / log in (currently a placeholder name-only flow — needs real
 Firebase Auth with email verification)
@@ -83,10 +87,11 @@ Make a canvass shareable: generates a join code, guests join via that
 code + a display name (no account) and all their logging goes into that
 one shared canvass
 Log out
+Map view: geocode each house's address (server-side, rate-limited Cloud
+Function), plot color-coded pins with Leaflet.js + OpenStreetMap tiles
+Home-screen installability: manifest.json, branded app icons, theme
+color, minimal service worker (no offline caching yet)
 Features discussed but NOT yet built anywhere (build these next)
-Map view: geocode each house's address, plot color-coded pins,
-suggest a walking order. Recommended approach: Leaflet.js + OpenStreetMap
-tiles + Nominatim geocoding (free, no API key required at this scale).
 Offline-first sync: queue edits locally when there's no connection,
 sync when it returns, with a visible "unsynced" indicator. Requires a
 service worker + IndexedDB — only works once actually deployed to a real
