@@ -69,7 +69,10 @@ in the repo. Next step once ready to ship.
 Features already designed in sidewalk.jsx (port all of these)
 Sign up / log in (currently a placeholder name-only flow — needs real
 Firebase Auth with email verification)
-Home screen: list of canvasses, each showing street/door counts
+Sign-in flow: campaign list (create/select) > that campaign's canvass
+list, each canvass showing street/door counts — DONE. An account can
+run canvasses for several different campaigns; each gets its own
+canvass list, gated by the same campaigns/{id}/members Firestore rules
 Create a canvass, rename it inline
 Add streets to a canvass, rename them inline, delete with confirmation
 Add houses to a street: single entry, or bulk import via pasted list or
