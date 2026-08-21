@@ -1,5 +1,7 @@
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
@@ -20,6 +22,14 @@ export async function logIn(email: string, password: string) {
 
 export async function logOut() {
   await signOut(auth);
+}
+
+// Used to gate destructive actions (deleting a campaign or canvass) behind
+// re-entering the account password, even though the user is already signed in.
+export async function reauthenticate(password: string) {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error("Not signed in.");
+  await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
 }
 
 export async function resendVerificationEmail() {

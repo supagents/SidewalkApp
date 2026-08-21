@@ -1,17 +1,21 @@
 import {
+  arrayRemove,
   arrayUnion,
   collection,
   doc,
   documentId,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { deleteCanvass } from "@/lib/canvass-data";
 import type { Campaign } from "@/lib/types";
 
 // The Firestore schema (sidewalk-firestore.rules) requires every canvass to
@@ -121,4 +125,24 @@ export async function createCampaign(uid: string, name: string): Promise<string>
   await waitForMembership(campaignRef.id, uid);
   await setDoc(profileRef(uid), { campaignIds: arrayUnion(campaignRef.id) }, { merge: true });
   return campaignRef.id;
+}
+
+export async function renameCampaign(campaignId: string, name: string) {
+  await updateDoc(doc(db, "campaigns", campaignId), { name });
+}
+
+// Deletes every canvass (and everything under it) in the campaign, then the
+// campaign doc and the caller's own membership doc, and drops the campaign
+// from their profile's campaignIds. The canvasses can be deleted in
+// parallel — each touches a disjoint set of documents.
+export async function deleteCampaign(uid: string, campaignId: string) {
+  const canvassesSnap = await getDocs(collection(doc(db, "campaigns", campaignId), "canvasses"));
+  await Promise.all(canvassesSnap.docs.map((d) => deleteCanvass(campaignId, d.id)));
+
+  const batch = writeBatch(db);
+  batch.delete(doc(db, "campaigns", campaignId, "members", uid));
+  batch.delete(doc(db, "campaigns", campaignId));
+  await batch.commit();
+
+  await updateDoc(profileRef(uid), { campaignIds: arrayRemove(campaignId) }).catch(() => {});
 }

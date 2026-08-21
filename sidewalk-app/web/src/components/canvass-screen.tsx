@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { ArrowLeft, BarChart3, MapIcon, Share2 } from "lucide-react";
+import { ArrowLeft, BarChart3, MapIcon, Share2, Trash2 } from "lucide-react";
 import {
   addHouses,
   addStreet,
+  deleteCanvass,
   deleteHouse,
   deleteStreet,
   exportCanvass,
@@ -28,7 +29,7 @@ import { StatsBar } from "@/components/stats-bar";
 import { SharePanel } from "@/components/share-panel";
 import { ExportMenu } from "@/components/export-menu";
 import { Toast } from "@/components/toast";
-import { logOut } from "@/lib/auth";
+import { authErrorMessage, logOut, reauthenticate } from "@/lib/auth";
 import { clearGuestSession } from "@/lib/share";
 
 // Leaflet needs `window` and touches the DOM directly, so it can never
@@ -228,8 +229,25 @@ export function CanvassScreen({
     }
   };
 
-  const confirmDeleteNow = async () => {
+  const confirmDeleteNow = async (password?: string) => {
     if (!confirmDelete) return;
+
+    if (confirmDelete.type === "canvass") {
+      try {
+        await reauthenticate(password ?? "");
+      } catch (err) {
+        throw new Error(authErrorMessage(err));
+      }
+      try {
+        await deleteCanvass(campaignId, confirmDelete.id);
+      } catch {
+        throw new Error("Couldn't delete canvass. Try again.");
+      }
+      setConfirmDelete(null);
+      onBack();
+      return;
+    }
+
     try {
       if (confirmDelete.type === "street") {
         await deleteStreet(campaignId, canvassId, confirmDelete.id);
@@ -238,10 +256,9 @@ export function CanvassScreen({
         if (expandedHouseId === confirmDelete.id) setExpandedHouseId(null);
       }
     } catch {
-      flashError("Couldn't delete. Try again.");
-    } finally {
-      setConfirmDelete(null);
+      throw new Error("Couldn't delete. Try again.");
     }
+    setConfirmDelete(null);
   };
 
   const handleExport = async (category: ExportCategory) => {
@@ -353,6 +370,15 @@ export function CanvassScreen({
           </button>
         )}
         <ExportMenu disabled={exporting} onExport={handleExport} />
+        {!isGuest && (
+          <button
+            onClick={() => setConfirmDelete({ type: "canvass", id: canvassId, label: canvass.name })}
+            title="Delete canvass"
+            className="p-1.5 border-2 border-black rounded-lg bg-white flex-shrink-0"
+          >
+            <Trash2 size={18} strokeWidth={2.5} />
+          </button>
+        )}
       </div>
 
       {sharePanelOpen && !isGuest && (

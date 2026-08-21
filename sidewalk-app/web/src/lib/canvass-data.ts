@@ -1,6 +1,8 @@
 import {
   collection,
+  deleteDoc,
   doc,
+  type DocumentReference,
   getDocs,
   increment,
   onSnapshot,
@@ -13,6 +15,18 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Canvass, CanvassExport, House, HouseStatus, Street } from "@/lib/types";
+
+// Firestore caps a batch at 500 writes; this leaves headroom for a canvass
+// with enough streets/houses to approach that.
+const BATCH_CHUNK_SIZE = 450;
+
+async function deleteRefsInChunks(refs: DocumentReference[]) {
+  for (let i = 0; i < refs.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + BATCH_CHUNK_SIZE).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+}
 
 function campaignRef(campaignId: string) {
   return doc(db, "campaigns", campaignId);
@@ -147,6 +161,21 @@ export async function deleteStreet(campaignId: string, canvassId: string, street
     updatedAt: serverTimestamp(),
   });
   await batch.commit();
+}
+
+// Deletes every street and house under a canvass, then the canvass itself.
+// Unlike deleteStreet, a whole canvass can easily exceed one batch's 500-write
+// cap, so this goes through deleteRefsInChunks rather than one writeBatch.
+export async function deleteCanvass(campaignId: string, canvassId: string) {
+  const streetsSnap = await getDocs(streetsCol(campaignId, canvassId));
+  const houseRefs: DocumentReference[] = [];
+  for (const streetDoc of streetsSnap.docs) {
+    const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetDoc.id));
+    housesSnap.docs.forEach((d) => houseRefs.push(d.ref));
+  }
+  await deleteRefsInChunks(houseRefs);
+  await deleteRefsInChunks(streetsSnap.docs.map((d) => d.ref));
+  await deleteDoc(canvassRef(campaignId, canvassId));
 }
 
 // ---------- Houses ----------

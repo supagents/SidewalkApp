@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Download, Plus } from "lucide-react";
+import { ArrowLeft, BarChart3, Download, Plus, Trash2 } from "lucide-react";
 import { ChunkyBox } from "@/components/chunky-box";
 import { Toast } from "@/components/toast";
-import { createCanvass, exportAllCanvasses, subscribeCanvasses } from "@/lib/canvass-data";
-import { subscribeCampaign } from "@/lib/campaign";
+import { ConfirmDeleteModal, type ConfirmDeleteTarget } from "@/components/confirm-delete-modal";
+import { StatsBar } from "@/components/stats-bar";
+import { createCanvass, exportAllCanvasses, fetchCanvassHouses, subscribeCanvasses } from "@/lib/canvass-data";
+import { deleteCampaign, renameCampaign, subscribeCampaign } from "@/lib/campaign";
 import { downloadAllCSV } from "@/lib/csv";
+import { authErrorMessage, reauthenticate } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
-import type { Campaign, Canvass } from "@/lib/types";
+import type { Campaign, Canvass, House } from "@/lib/types";
 
 export function HomeScreen({
   campaignId,
@@ -28,9 +31,45 @@ export function HomeScreen({
   const [newState, setNewState] = useState("");
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteTarget | null>(null);
+  const [statsPanelOpen, setStatsPanelOpen] = useState(false);
+  const [allHouses, setAllHouses] = useState<House[] | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
 
   useEffect(() => subscribeCampaign(campaignId, setCampaign), [campaignId]);
   useEffect(() => subscribeCanvasses(campaignId, setCanvasses), [campaignId]);
+
+  // One-time read across every canvass in the campaign, only while the
+  // results panel is actually open — same tradeoff as the "whole canvass"
+  // stats scope in CanvassScreen, just one level up. Keyed on the set of
+  // canvass IDs (not the `canvasses` array itself, which gets a new
+  // reference on every doorCount/streetCount write) so this doesn't
+  // re-fetch on every unrelated edit while the panel stays open.
+  const canvassIdsKey = canvasses
+    .map((c) => c.id)
+    .sort()
+    .join(",");
+
+  useEffect(() => {
+    if (!statsPanelOpen) return;
+    let cancelled = false;
+    const ids = canvassIdsKey ? canvassIdsKey.split(",") : [];
+    Promise.resolve().then(async () => {
+      if (cancelled) return;
+      setLoadingStats(true);
+      try {
+        const perCanvass = await Promise.all(ids.map((id) => fetchCanvassHouses(campaignId, id)));
+        if (!cancelled) setAllHouses(perCanvass.flat());
+      } finally {
+        if (!cancelled) setLoadingStats(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [statsPanelOpen, campaignId, canvassIdsKey]);
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -65,6 +104,40 @@ export function HomeScreen({
     }
   };
 
+  const startEditName = () => {
+    if (!campaign) return;
+    setNameDraft(campaign.name);
+    setEditingName(true);
+  };
+  const commitName = async () => {
+    setEditingName(false);
+    const name = nameDraft.trim();
+    if (!name || !campaign || name === campaign.name) return;
+    try {
+      await renameCampaign(campaignId, name);
+    } catch {
+      flashError("Couldn't rename campaign.");
+    }
+  };
+
+  const confirmDeleteNow = async (password?: string) => {
+    if (!confirmDelete || !user) return;
+    try {
+      await reauthenticate(password ?? "");
+    } catch (err) {
+      throw new Error(authErrorMessage(err));
+    }
+    try {
+      await deleteCampaign(user.uid, confirmDelete.id);
+    } catch {
+      throw new Error("Couldn't delete campaign. Try again.");
+    }
+    setConfirmDelete(null);
+    onBackToCampaigns();
+  };
+
+  const streetTotal = canvasses.reduce((sum, c) => sum + c.streetCount, 0);
+
   return (
     <div className="flex flex-col flex-1 w-full max-w-2xl mx-auto">
       <div className="px-4 pt-6 pb-5 flex items-center gap-3">
@@ -72,9 +145,32 @@ export function HomeScreen({
           <ArrowLeft size={18} strokeWidth={2.5} />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="font-bold truncate">{campaign?.name ?? "…"}</div>
+          {editingName ? (
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitName();
+                if (e.key === "Escape") setEditingName(false);
+              }}
+              onBlur={commitName}
+              className="font-bold w-full outline-none border-b-2 border-black bg-transparent"
+            />
+          ) : (
+            <button onClick={startEditName} className="font-bold truncate text-left block w-full">
+              {campaign?.name ?? "…"}
+            </button>
+          )}
           <div className="text-xs text-gray-500 uppercase tracking-wide">Campaign</div>
         </div>
+        <button
+          onClick={() => setStatsPanelOpen((v) => !v)}
+          title="Results"
+          className={"p-1.5 border-2 border-black rounded-lg flex-shrink-0 " + (statsPanelOpen ? "bg-black text-white" : "bg-white")}
+        >
+          <BarChart3 size={18} strokeWidth={2.5} />
+        </button>
         {canvasses.length > 0 && (
           <button
             onClick={handleExportAll}
@@ -85,7 +181,29 @@ export function HomeScreen({
             <Download size={18} strokeWidth={2.5} />
           </button>
         )}
+        <button
+          onClick={() => campaign && setConfirmDelete({ type: "campaign", id: campaignId, label: campaign.name })}
+          title="Delete campaign"
+          className="p-1.5 border-2 border-black rounded-lg bg-white flex-shrink-0"
+        >
+          <Trash2 size={18} strokeWidth={2.5} />
+        </button>
       </div>
+
+      {statsPanelOpen && (
+        <div className="mx-5 mb-3 p-3.5 border-2 border-black rounded-xl bg-white">
+          {loadingStats || allHouses === null ? (
+            <div className="text-xs text-gray-400 text-center py-4">Loading…</div>
+          ) : (
+            <>
+              <div className="text-xs text-gray-500 mb-2">
+                {streetTotal} street{streetTotal === 1 ? "" : "s"}
+              </div>
+              <StatsBar houses={allHouses} label={campaign?.name ?? "All canvasses"} />
+            </>
+          )}
+        </div>
+      )}
 
       <div className="px-5 pb-3">
         {!creating ? (
@@ -181,6 +299,10 @@ export function HomeScreen({
           </div>
         )}
       </div>
+
+      {confirmDelete && (
+        <ConfirmDeleteModal target={confirmDelete} onCancel={() => setConfirmDelete(null)} onConfirm={confirmDeleteNow} />
+      )}
       <Toast message={error} />
     </div>
   );
