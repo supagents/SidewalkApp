@@ -81,7 +81,14 @@ the account password (Firebase reauthentication), not just a plain
 confirm
 Add streets to a canvass, rename them inline, delete with confirmation
 Add houses to a street: single entry, or bulk import via pasted list or
-CSV/TXT file upload, deduping against existing numbers
+CSV/TXT file upload (plain house-number list, one street at a time),
+deduping against existing numbers
+Canvass-wide voter list import: upload a real multi-column CSV
+(first_name, last_name, house_number, street, city, state, phone,
+email) with no street pre-selected — houses are grouped by street
+automatically (creating streets that don't exist yet), sorted by house
+number, deduped against what's already logged, with name/phone/email
+folded into each house's notes
 Per-house: four status icons (supporter/undecided/not supporting/not
 home — custom SVG icons, colors green/yellow/red/gray, black outlines),
 a lawn-sign toggle (custom icon, not a generic flag), a follow-up flag,
