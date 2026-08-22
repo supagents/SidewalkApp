@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { ArrowLeft, BarChart3, MapIcon, Share2, Trash2 } from "lucide-react";
+import { ArrowLeft, BarChart3, MapIcon, Share2, Trash2, Upload } from "lucide-react";
 import {
   addHouses,
   addStreet,
@@ -11,6 +11,7 @@ import {
   deleteStreet,
   exportCanvass,
   fetchCanvassHouses,
+  importVoterList,
   renameCanvass,
   renameStreet,
   subscribeCanvass,
@@ -20,11 +21,13 @@ import {
   updateHouse,
 } from "@/lib/canvass-data";
 import { downloadCanvassCSV, type ExportCategory } from "@/lib/csv";
+import type { ParsedImport } from "@/lib/voter-import";
 import type { Canvass, House, Street } from "@/lib/types";
 import { StreetNav } from "@/components/street-nav";
 import { HouseList } from "@/components/house-list";
 import { AddHouseBar } from "@/components/add-house-bar";
 import { ConfirmDeleteModal, type ConfirmDeleteTarget } from "@/components/confirm-delete-modal";
+import { ImportCSVModal } from "@/components/import-csv-modal";
 import { StatsBar } from "@/components/stats-bar";
 import { SharePanel } from "@/components/share-panel";
 import { ExportMenu } from "@/components/export-menu";
@@ -77,6 +80,7 @@ export function CanvassScreen({
   const [mapStreetId, setMapStreetId] = useState<string | null>(null);
   const [mapHouses, setMapHouses] = useState<House[]>([]);
   const [loadingMapHouses, setLoadingMapHouses] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -274,6 +278,17 @@ export function CanvassScreen({
     }
   };
 
+  const handleImportVoterList = async (parsed: ParsedImport) => {
+    const result = await importVoterList(campaignId, canvassId, parsed, streets, canvass.city, canvass.state);
+    setImportOpen(false);
+    flashError(
+      `Imported ${result.housesAdded} house${result.housesAdded === 1 ? "" : "s"}` +
+        (result.streetsCreated > 0 ? `, created ${result.streetsCreated} street${result.streetsCreated === 1 ? "" : "s"}` : "") +
+        (result.housesSkipped > 0 ? `, skipped ${result.housesSkipped} already logged` : "") +
+        "."
+    );
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="px-4 pt-6 pb-3 flex items-center gap-3">
@@ -370,6 +385,15 @@ export function CanvassScreen({
           </button>
         )}
         <ExportMenu disabled={exporting} onExport={handleExport} />
+        {!isGuest && (
+          <button
+            onClick={() => setImportOpen(true)}
+            title="Import voter list"
+            className="p-1.5 border-2 border-black rounded-lg bg-white flex-shrink-0"
+          >
+            <Upload size={18} strokeWidth={2.5} />
+          </button>
+        )}
         {!isGuest && (
           <button
             onClick={() => setConfirmDelete({ type: "canvass", id: canvassId, label: canvass.name })}
@@ -494,6 +518,9 @@ export function CanvassScreen({
 
       {confirmDelete && (
         <ConfirmDeleteModal target={confirmDelete} onCancel={() => setConfirmDelete(null)} onConfirm={confirmDeleteNow} />
+      )}
+      {importOpen && (
+        <ImportCSVModal streets={streets} onCancel={() => setImportOpen(false)} onImport={handleImportVoterList} />
       )}
       <Toast message={error} />
     </div>

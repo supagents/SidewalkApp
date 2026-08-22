@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Canvass, CanvassExport, House, HouseStatus, Street } from "@/lib/types";
+import type { ParsedImport } from "@/lib/voter-import";
 
 // Firestore caps a batch at 500 writes; this leaves headroom for a canvass
 // with enough streets/houses to approach that.
@@ -24,6 +25,19 @@ async function deleteRefsInChunks(refs: DocumentReference[]) {
   for (let i = 0; i < refs.length; i += BATCH_CHUNK_SIZE) {
     const batch = writeBatch(db);
     refs.slice(i, i + BATCH_CHUNK_SIZE).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+}
+
+type WriteOp = { ref: DocumentReference; data: object; merge?: boolean };
+
+async function setRefsInChunks(ops: WriteOp[]) {
+  for (let i = 0; i < ops.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + BATCH_CHUNK_SIZE).forEach((op) => {
+      if (op.merge) batch.set(op.ref, op.data, { merge: true });
+      else batch.set(op.ref, op.data);
+    });
     await batch.commit();
   }
 }
@@ -268,6 +282,94 @@ export async function addHouses(
   });
   await batch.commit();
   return toAdd.length;
+}
+
+export type VoterImportResult = { housesAdded: number; housesSkipped: number; streetsCreated: number };
+
+// Canvass-wide counterpart to addHouses: takes a ParsedImport (already
+// grouped by street name and sorted by house number — see
+// lib/voter-import.ts) and writes it across however many streets it
+// spans, creating any street that doesn't already exist on this canvass
+// (matched case-insensitively) rather than requiring one to be selected
+// first. Each group's own city/state (from its CSV rows) wins over the
+// canvass's when building a house's address; falls back to the canvass's
+// when a row didn't have one.
+export async function importVoterList(
+  campaignId: string,
+  canvassId: string,
+  parsed: ParsedImport,
+  existingStreets: Street[],
+  fallbackCity: string,
+  fallbackState: string
+): Promise<VoterImportResult> {
+  const existingByName = new Map(existingStreets.map((s) => [s.name.trim().toLowerCase(), s]));
+  const houseOps: WriteOp[] = [];
+  const streetOps: WriteOp[] = [];
+  let housesAdded = 0;
+  let housesSkipped = 0;
+  let streetsCreated = 0;
+
+  for (let i = 0; i < parsed.streets.length; i++) {
+    const group = parsed.streets[i];
+    const existing = existingByName.get(group.name.trim().toLowerCase());
+    const streetId = existing ? existing.id : newId(streetsCol(campaignId, canvassId));
+
+    let existingNumbers = new Set<string>();
+    if (existing) {
+      const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetId));
+      existingNumbers = new Set(housesSnap.docs.map((d) => d.data().number as string));
+    }
+
+    const seenInFile = new Set<string>();
+    let addedForStreet = 0;
+    group.houses.forEach((h) => {
+      if (existingNumbers.has(h.number) || seenInFile.has(h.number)) {
+        housesSkipped++;
+        return;
+      }
+      seenInFile.add(h.number);
+      addedForStreet++;
+      houseOps.push({
+        ref: doc(housesCol(campaignId, canvassId, streetId)),
+        data: {
+          number: h.number,
+          status: null,
+          lawnSign: false,
+          revisit: false,
+          notes: h.notes,
+          createdAt: serverTimestamp(),
+          address: buildHouseAddress(h.number, group.name, h.city || fallbackCity, h.state || fallbackState),
+          lat: null,
+          lng: null,
+        },
+      });
+    });
+
+    if (addedForStreet === 0) continue; // nothing landed here — an all-duplicates group shouldn't create an empty street
+
+    housesAdded += addedForStreet;
+    if (existing) {
+      streetOps.push({ ref: streetRef(campaignId, canvassId, streetId), data: { houseCount: increment(addedForStreet) }, merge: true });
+    } else {
+      streetsCreated++;
+      streetOps.push({
+        ref: streetRef(campaignId, canvassId, streetId),
+        data: { name: group.name, position: Date.now() + i, houseCount: increment(addedForStreet) },
+      });
+    }
+  }
+
+  if (housesAdded === 0) return { housesAdded: 0, housesSkipped, streetsCreated: 0 };
+
+  await setRefsInChunks(streetOps);
+  await setRefsInChunks(houseOps);
+  await updateDoc(canvassRef(campaignId, canvassId), {
+    streetCount: increment(streetsCreated),
+    doorCount: increment(housesAdded),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { housesAdded, housesSkipped, streetsCreated };
 }
 
 export async function updateHouse(

@@ -90,8 +90,9 @@ export function AddHouseBar({ onAdd }: { onAdd: (raw: string) => void }) {
             </button>
           </div>
           <div className="text-xs text-gray-400 mt-2 leading-relaxed">
-            Works with a plain list of house numbers, one per line or comma-separated — like a single
-            column exported from a spreadsheet or voter file.
+            Works with a plain list of house numbers only, one per line or comma-separated — all added
+            to this street. For a full voter file with names, phone, email, or multiple streets, use
+            &quot;Import voter list&quot; up in the canvass header instead.
           </div>
         </div>
       )}
