@@ -46,7 +46,9 @@ export function subscribeMapOverlays(campaignId: string, canvassId: string, cb: 
           id: d.id,
           name: data.name,
           color: data.color,
-          geojson: data.geojson,
+          // Stored as a JSON string, not a native Firestore array/map — see
+          // the comment on uploadMapOverlay's setDoc call below for why.
+          geojson: JSON.parse(data.geojson) as FeatureCollection,
           createdBy: data.createdBy,
           createdAt: data.createdAt?.toMillis?.() ?? 0,
         };
@@ -185,7 +187,15 @@ export async function uploadMapOverlay(
     throw new Error("Couldn't find any shapes in that file.");
   }
 
-  const sizeBytes = new Blob([JSON.stringify(geojson)]).size;
+  // A GeoJSON Polygon/MultiPolygon's coordinates are an array directly
+  // containing other arrays (rings of [lng,lat] pairs, or arrays of
+  // those for a MultiPolygon) — Firestore rejects that shape outright
+  // ("Nested arrays are not supported") if stored as a native array/map
+  // field. Storing it as a JSON string sidesteps the restriction entirely
+  // (Firestore has no such limit on strings) without needing to move this
+  // out of Firestore — subscribeMapOverlays parses it back on the way out.
+  const geojsonText = JSON.stringify(geojson);
+  const sizeBytes = new Blob([geojsonText]).size;
   if (sizeBytes > MAX_GEOJSON_BYTES) {
     throw new Error(
       `That boundary is too detailed to store (${Math.round(sizeBytes / 1024)}KB, limit ~${Math.round(
@@ -198,7 +208,7 @@ export async function uploadMapOverlay(
   await setDoc(ref, {
     name,
     color: OVERLAY_COLORS[colorIndex % OVERLAY_COLORS.length],
-    geojson,
+    geojson: geojsonText,
     createdBy: uid,
     createdAt: serverTimestamp(),
   });
