@@ -107,6 +107,12 @@ one shared canvass
 Log out
 Map view: geocode each house's address (server-side, rate-limited Cloud
 Function), plot color-coded pins with Leaflet.js + OpenStreetMap tiles
+Boundary layer overlays on the map: upload a ward, riding, poll
+division, or any other district file (GeoJSON, KML, or zipped
+Shapefile — not tied to any one country's electoral geography, since
+the goal is any candidate anywhere), toggle each on/off. Parsed and
+size-capped client-side, stored per canvass; members can upload/
+delete, guests can see them
 Home-screen installability: manifest.json, branded app icons, theme
 color, minimal service worker (no offline caching yet)
 Features discussed but NOT yet built anywhere (build these next)
