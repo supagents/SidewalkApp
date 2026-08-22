@@ -22,6 +22,7 @@ import {
 } from "@/lib/canvass-data";
 import { downloadCanvassCSV, type ExportCategory } from "@/lib/csv";
 import type { ParsedImport } from "@/lib/voter-import";
+import { deleteMapOverlay, subscribeMapOverlays, uploadMapOverlay, type MapOverlay } from "@/lib/map-overlays";
 import type { Canvass, House, Street } from "@/lib/types";
 import { StreetNav } from "@/components/street-nav";
 import { HouseList } from "@/components/house-list";
@@ -33,6 +34,7 @@ import { SharePanel } from "@/components/share-panel";
 import { ExportMenu } from "@/components/export-menu";
 import { Toast } from "@/components/toast";
 import { authErrorMessage, logOut, reauthenticate } from "@/lib/auth";
+import { useAuth } from "@/lib/auth-context";
 import { clearGuestSession } from "@/lib/share";
 
 // Leaflet needs `window` and touches the DOM directly, so it can never
@@ -58,6 +60,7 @@ export function CanvassScreen({
   onBack: () => void;
   isGuest?: boolean;
 }) {
+  const { user } = useAuth();
   const [canvass, setCanvass] = useState<Canvass | null>(null);
   const [streets, setStreets] = useState<Street[]>([]);
   const [activeStreetId, setActiveStreetId] = useState<string | null>(null);
@@ -81,6 +84,7 @@ export function CanvassScreen({
   const [mapHouses, setMapHouses] = useState<House[]>([]);
   const [loadingMapHouses, setLoadingMapHouses] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [overlays, setOverlays] = useState<MapOverlay[]>([]);
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -134,6 +138,15 @@ export function CanvassScreen({
       cancelled = true;
     };
   }, [viewMode, mapStreetId, campaignId, canvassId]);
+
+  // Boundary layers (ward/riding/poll/etc.) are only relevant on the map,
+  // and can carry a fair amount of GeoJSON — same "only while the tab is
+  // open" gating as the map houses fetch above, so this data isn't pulled
+  // down on every canvass visit.
+  useEffect(() => {
+    if (viewMode !== "map") return;
+    return subscribeMapOverlays(campaignId, canvassId, setOverlays);
+  }, [viewMode, campaignId, canvassId]);
 
   // Only pull every street's houses (a one-time read, not a live
   // subscription) when the results panel actually needs the "whole
@@ -287,6 +300,15 @@ export function CanvassScreen({
         (result.housesSkipped > 0 ? `, skipped ${result.housesSkipped} already logged` : "") +
         "."
     );
+  };
+
+  const handleUploadOverlay = async (name: string, file: File) => {
+    if (!user) return;
+    await uploadMapOverlay(campaignId, canvassId, user.uid, name, file, overlays.length);
+  };
+
+  const handleDeleteOverlay = (id: string) => {
+    deleteMapOverlay(campaignId, canvassId, id).catch(() => flashError("Couldn't delete that layer."));
   };
 
   return (
@@ -512,7 +534,13 @@ export function CanvassScreen({
             <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
           </div>
         ) : (
-          <MapView houses={mapHouses} />
+          <MapView
+            houses={mapHouses}
+            overlays={overlays}
+            onUploadOverlay={isGuest ? undefined : handleUploadOverlay}
+            onDeleteOverlay={isGuest ? undefined : handleDeleteOverlay}
+            canManageOverlays={!isGuest}
+          />
         )}
       </div>
 

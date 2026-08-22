@@ -6,7 +6,10 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
+import { Layers, Plus, Trash2 } from "lucide-react";
 import { STATUS_COLORS, STATUS_LABEL, STATUS_ORDER } from "@/components/status-icons";
+import { UploadOverlayModal } from "@/components/upload-overlay-modal";
+import type { MapOverlay } from "@/lib/map-overlays";
 import type { House, HouseStatus } from "@/lib/types";
 
 const NO_STATUS_COLOR = "#D1D5DB"; // matches the pale gray "unlogged" face outline elsewhere in the app
@@ -56,6 +59,70 @@ function MapFilterBar({
   );
 }
 
+function LayersPanel({
+  overlays,
+  hiddenIds,
+  onToggle,
+  onDelete,
+  onAddClick,
+  canManage,
+  onClose,
+}: {
+  overlays: MapOverlay[];
+  hiddenIds: Set<string>;
+  onToggle: (id: string) => void;
+  onDelete: (id: string) => void;
+  onAddClick: () => void;
+  canManage: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div className="absolute right-3 top-3 z-[500] w-64 bg-white border-2 border-black rounded-xl overflow-hidden shadow-sm">
+      <div className="px-3.5 py-2.5 border-b border-gray-200 flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wide">Layers</span>
+        <button onClick={onClose} className="text-gray-400 text-xs font-semibold">
+          Close
+        </button>
+      </div>
+      {overlays.length === 0 ? (
+        <div className="px-3.5 py-4 text-xs text-gray-400 text-center leading-relaxed">
+          No boundary layers yet — ward, riding, poll, or any other district file.
+        </div>
+      ) : (
+        <div className="max-h-52 overflow-y-auto divide-y divide-gray-100">
+          {overlays.map((o) => {
+            const active = !hiddenIds.has(o.id);
+            return (
+              <div key={o.id} className="flex items-center gap-2 px-3.5 py-2.5">
+                <button onClick={() => onToggle(o.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                  <span
+                    className="w-3 h-3 rounded-sm border border-black flex-shrink-0"
+                    style={{ background: active ? o.color : "#E5E7EB", borderColor: active ? "#000" : "#D1D5DB" }}
+                  />
+                  <span className={"text-sm font-semibold truncate " + (active ? "text-black" : "text-gray-400")}>{o.name}</span>
+                </button>
+                {canManage && (
+                  <button onClick={() => onDelete(o.id)} className="text-gray-300 flex-shrink-0">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {canManage && (
+        <button
+          onClick={onAddClick}
+          className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2.5 border-t border-gray-200 text-sm font-bold"
+        >
+          <Plus size={14} strokeWidth={3} /> Add layer
+        </button>
+      )}
+    </div>
+  );
+}
+
 function pinIcon(color: string) {
   return L.divIcon({
     className: "",
@@ -74,17 +141,42 @@ function clusterIcon(cluster: L.MarkerCluster) {
   });
 }
 
-export function MapView({ houses }: { houses: House[] }) {
+export function MapView({
+  houses,
+  overlays = [],
+  onUploadOverlay,
+  onDeleteOverlay,
+  canManageOverlays = false,
+}: {
+  houses: House[];
+  overlays?: MapOverlay[];
+  onUploadOverlay?: (name: string, file: File) => Promise<void>;
+  onDeleteOverlay?: (id: string) => void;
+  canManageOverlays?: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const clusterGroupRef = useRef<L.MarkerClusterGroup | null>(null);
+  const overlayLayersRef = useRef<Map<string, L.GeoJSON>>(new Map());
   const [hidden, setHidden] = useState<Set<FilterKey>>(new Set());
+  const [hiddenOverlayIds, setHiddenOverlayIds] = useState<Set<string>>(new Set());
+  const [layersPanelOpen, setLayersPanelOpen] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   const toggleFilter = (key: FilterKey) => {
     setHidden((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleOverlay = (id: string) => {
+    setHiddenOverlayIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -102,11 +194,51 @@ export function MapView({ houses }: { houses: House[] }) {
     clusterGroupRef.current = clusterGroup;
 
     return () => {
+      // map.remove() tears down every layer added to it, including the
+      // overlay layers below — and this whole component (ref included)
+      // unmounts along with it, so there's nothing left to separately clear.
       map.remove();
       mapRef.current = null;
       clusterGroupRef.current = null;
     };
   }, []);
+
+  // Boundary layers live directly on the map (not the marker cluster
+  // group) since they're polygons, not points — added/removed from a
+  // per-overlay-id cache rather than rebuilt every render, so toggling
+  // visibility doesn't re-parse the (sometimes sizable) GeoJSON each time.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const currentIds = new Set(overlays.map((o) => o.id));
+    overlayLayersRef.current.forEach((layer, id) => {
+      if (!currentIds.has(id)) {
+        map.removeLayer(layer);
+        overlayLayersRef.current.delete(id);
+      }
+    });
+
+    overlays.forEach((o) => {
+      let layer = overlayLayersRef.current.get(o.id);
+      if (!layer) {
+        layer = L.geoJSON(o.geojson, {
+          style: { color: o.color, weight: 2, fillColor: o.color, fillOpacity: 0.08 },
+          onEachFeature: (feature, l) => {
+            const label = feature.properties?.label as string | null | undefined;
+            l.bindPopup(
+              `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:700;">${label || o.name}</div>`
+            );
+          },
+        });
+        overlayLayersRef.current.set(o.id, layer);
+      }
+      const shouldShow = !hiddenOverlayIds.has(o.id);
+      const isOnMap = map.hasLayer(layer);
+      if (shouldShow && !isOnMap) layer.addTo(map);
+      if (!shouldShow && isOnMap) map.removeLayer(layer);
+    });
+  }, [overlays, hiddenOverlayIds]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -150,7 +282,37 @@ export function MapView({ houses }: { houses: House[] }) {
             </div>
           </div>
         )}
+
+        {layersPanelOpen ? (
+          <LayersPanel
+            overlays={overlays}
+            hiddenIds={hiddenOverlayIds}
+            onToggle={toggleOverlay}
+            onDelete={(id) => onDeleteOverlay?.(id)}
+            onAddClick={() => setUploadModalOpen(true)}
+            canManage={canManageOverlays}
+            onClose={() => setLayersPanelOpen(false)}
+          />
+        ) : (
+          <button
+            onClick={() => setLayersPanelOpen(true)}
+            title="Boundary layers"
+            className="absolute right-3 top-3 z-[500] w-9 h-9 flex items-center justify-center bg-white border-2 border-black rounded-lg shadow-sm"
+          >
+            <Layers size={16} strokeWidth={2.5} />
+          </button>
+        )}
       </div>
+
+      {uploadModalOpen && onUploadOverlay && (
+        <UploadOverlayModal
+          onCancel={() => setUploadModalOpen(false)}
+          onUpload={async (name, file) => {
+            await onUploadOverlay(name, file);
+            setUploadModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

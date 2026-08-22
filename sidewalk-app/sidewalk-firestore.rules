@@ -22,6 +22,11 @@
 //       (written only by the joinCanvassByCode Cloud Function — grants
 //       one anonymous-auth user access to this ONE canvass, not the
 //       whole campaign)
+//     /mapOverlays/{overlayId}
+//       name, color, geojson, createdBy, createdAt
+//       (user-uploaded boundary layer — ward, riding, poll division,
+//       etc. — parsed client-side from GeoJSON/KML/Shapefile down to a
+//       plain GeoJSON FeatureCollection before it's stored)
 // /shareCodes/{code}
 //     campaignId, canvassId, createdBy, createdAt
 //     (join-code lookup for the share flow; the code itself is the doc
@@ -112,6 +117,17 @@ service cloud.firestore {
         // campaign, unlike /members.
         match /guests/{uid} {
           allow read, write: if false;
+        }
+
+        // ---------- map overlays ----------
+        // User-uploaded boundary layers (ward, riding, poll division, or
+        // any other district) shown on this canvass's map. A guest can
+        // see them (useful context while canvassing) but not upload or
+        // remove one — that's treated as campaign setup, not day-of
+        // canvassing data, same reasoning as canvass-level delete.
+        match /mapOverlays/{overlayId} {
+          allow read: if hasCanvassAccess(campaignId, canvassId);
+          allow create, update, delete: if isMember(campaignId);
         }
       }
     }
