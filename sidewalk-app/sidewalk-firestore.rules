@@ -79,16 +79,29 @@ service cloud.firestore {
       }
 
       // ---------- canvasses ----------
+      // A canvass guest (joined by share code) can add and edit — create
+      // and update — at every level here, but never delete: only a real
+      // campaign member can delete a house, a street, or the canvass
+      // itself. Without this split, hasCanvassAccess's blanket "write"
+      // covers delete too, letting a guest remove the whole canvass doc
+      // (or any street/house) with a direct write, regardless of what
+      // the UI shows them.
       match /canvasses/{canvassId} {
-        allow read, write: if hasCanvassAccess(campaignId, canvassId);
+        allow read: if hasCanvassAccess(campaignId, canvassId);
+        allow create, update: if hasCanvassAccess(campaignId, canvassId);
+        allow delete: if isManager(campaignId);
 
         // ---------- streets ----------
         match /streets/{streetId} {
-          allow read, write: if hasCanvassAccess(campaignId, canvassId);
+          allow read: if hasCanvassAccess(campaignId, canvassId);
+          allow create, update: if hasCanvassAccess(campaignId, canvassId);
+          allow delete: if isMember(campaignId);
 
           // ---------- houses ----------
           match /houses/{houseId} {
-            allow read, write: if hasCanvassAccess(campaignId, canvassId);
+            allow read: if hasCanvassAccess(campaignId, canvassId);
+            allow create, update: if hasCanvassAccess(campaignId, canvassId);
+            allow delete: if isMember(campaignId);
           }
         }
 

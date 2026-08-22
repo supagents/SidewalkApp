@@ -440,6 +440,7 @@ export function CanvassScreen({
             onAdd={handleAddStreet}
             onRename={(id, name) => renameStreet(campaignId, canvassId, id, name).catch(() => flashError("Couldn't rename street."))}
             onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
+            canDelete={!isGuest}
           />
         ) : (
           <StreetNav
@@ -449,6 +450,7 @@ export function CanvassScreen({
             onAdd={handleAddStreet}
             onRename={(id, name) => renameStreet(campaignId, canvassId, id, name).catch(() => flashError("Couldn't rename street."))}
             onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
+            canDelete={!isGuest}
             allowAll
           />
         )}
@@ -476,6 +478,7 @@ export function CanvassScreen({
                   const h = activeHouses.find((x) => x.id === id);
                   setConfirmDelete({ type: "house", id, label: `house ${h?.number ?? ""}` });
                 }}
+                canDelete={!isGuest}
               />
             </div>
             {activeStreet && <AddHouseBar onAdd={handleAddHouses} />}

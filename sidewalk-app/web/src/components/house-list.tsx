@@ -16,6 +16,7 @@ export function HouseList({
   onNumberChange,
   onNotesChange,
   onDelete,
+  canDelete = true,
 }: {
   street: Street | null;
   houses: House[];
@@ -27,6 +28,7 @@ export function HouseList({
   onNumberChange: (houseId: string, number: string) => void;
   onNotesChange: (houseId: string, notes: string) => void;
   onDelete: (houseId: string) => void;
+  canDelete?: boolean;
 }) {
   const [showRevisitsOnly, setShowRevisitsOnly] = useState(false);
 
@@ -79,6 +81,7 @@ export function HouseList({
             onNumberChange={(number) => onNumberChange(h.id, number)}
             onNotesChange={(notes) => onNotesChange(h.id, notes)}
             onDelete={() => onDelete(h.id)}
+            canDelete={canDelete}
           />
         ))}
       </div>

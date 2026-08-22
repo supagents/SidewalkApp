@@ -105,6 +105,7 @@ export function StreetNav({
   onRename,
   onDeleteRequest,
   allowAll = false,
+  canDelete = true,
 }: {
   streets: Street[];
   activeStreetId: string | null;
@@ -113,6 +114,7 @@ export function StreetNav({
   onRename: (id: string, name: string) => void;
   onDeleteRequest: (street: Street) => void;
   allowAll?: boolean;
+  canDelete?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -166,13 +168,15 @@ export function StreetNav({
                   {s.houseCount}
                 </span>
               </button>
-              <button
-                onClick={() => onDeleteRequest(s)}
-                title="Delete street"
-                className={"w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 " + (active ? "text-gray-300" : "text-gray-400")}
-              >
-                <Trash2 size={13} />
-              </button>
+              {canDelete && (
+                <button
+                  onClick={() => onDeleteRequest(s)}
+                  title="Delete street"
+                  className={"w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 " + (active ? "text-gray-300" : "text-gray-400")}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           );
         })}
@@ -228,13 +232,15 @@ export function StreetNav({
                     {s.houseCount}
                   </span>
                 </button>
-                <button
-                  onClick={() => onDeleteRequest(s)}
-                  title="Delete street"
-                  className={"w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mr-1 " + (active ? "text-gray-300" : "text-gray-400")}
-                >
-                  <Trash2 size={14} />
-                </button>
+                {canDelete && (
+                  <button
+                    onClick={() => onDeleteRequest(s)}
+                    title="Delete street"
+                    className={"w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mr-1 " + (active ? "text-gray-300" : "text-gray-400")}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             );
           })}
