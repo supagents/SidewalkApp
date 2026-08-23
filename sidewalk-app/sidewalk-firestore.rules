@@ -135,10 +135,17 @@ service cloud.firestore {
     // ---------- shareCodes ----------
     // Doc ID is the code itself, so it's only reachable if you already
     // know it — there's no way to list/enumerate codes. A manager
-    // creates one to turn sharing on; joinCanvassByCode (Cloud
-    // Function) reads it to resolve a code a guest typed in.
+    // creates one to turn sharing on; joinCanvassByCode (Cloud Function,
+    // Admin SDK, bypasses these rules) reads it to resolve a code a guest
+    // typed in. `allow read` would grant `list` too, not just `get` —
+    // since this rule doesn't depend on the document at all, that would
+    // let anyone enumerate every share code on the platform via a plain
+    // collection query, no code-guessing needed. Only `get` is granted
+    // (nothing in the client ever reads a code back anyway — it only
+    // creates/deletes the one it generates), so a query against the
+    // collection is rejected outright.
     match /shareCodes/{code} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow create: if isManager(request.resource.data.campaignId)
         && request.resource.data.createdBy == request.auth.uid;
       allow delete: if isManager(resource.data.campaignId);
@@ -146,8 +153,11 @@ service cloud.firestore {
 
     // ---------- profiles ----------
     // Optional: only needed if you store display names outside auth.
+    // Same `get`-not-`list` reasoning as shareCodes above — the client
+    // only ever fetches its own profile by uid, never lists the
+    // collection, so nothing here depends on `list` being allowed.
     match /profiles/{uid} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if isSignedIn() && uid == request.auth.uid;
     }
   }
