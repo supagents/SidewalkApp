@@ -7,9 +7,25 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 
 admin.initializeApp();
 const db = admin.firestore();
+
+// A plain !== comparison on a secret token returns as soon as it hits the
+// first mismatched byte, so how long the comparison takes leaks (in
+// principle) how many leading bytes of a guess were correct — a timing
+// side channel. crypto.timingSafeEqual always takes the same time
+// regardless of where the mismatch is. It requires equal-length buffers,
+// so the length check has to happen first — but leaking whether two
+// *lengths* differ isn't the same class of problem (both tokens here are
+// fixed-length UUIDs in practice) as leaking *content* byte-by-byte.
+function timingSafeStringEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 // ------------------------------------------------------------
 // acceptInvite: call from the app after the user has signed in.
@@ -41,7 +57,7 @@ exports.acceptInvite = onCall(async (request) => {
   if (invite.status !== 'pending') {
     throw new HttpsError('failed-precondition', 'This invite has already been used or revoked.');
   }
-  if (invite.token !== token) {
+  if (!timingSafeStringEqual(invite.token, token)) {
     throw new HttpsError('permission-denied', 'Invalid invite link.');
   }
   if (invite.expiresAt.toDate() < new Date()) {
@@ -81,6 +97,42 @@ exports.onCampaignCreated = onDocumentCreated('campaigns/{campaignId}', async (e
 });
 
 // ------------------------------------------------------------
+// A 6-character code (32^6 ≈ 1.07B combinations) is impractical to brute
+// force outright, but nothing was actually stopping repeated guesses
+// either. This caps a given (anonymous) caller to a handful of attempts
+// per window before failing closed — same "shared next-available-slot
+// doc, updated in a transaction" shape as the geocode rate limiter below,
+// just tracking a per-uid attempt count instead of a shared timestamp.
+// Keyed on the caller's uid rather than IP: this function only runs for
+// signed-in (including anonymous) callers, and Cloud Functions requests
+// don't expose a client IP as directly usable as request.auth.uid.
+// ------------------------------------------------------------
+const JOIN_ATTEMPT_LIMIT = 8;
+const JOIN_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
+
+async function checkJoinRateLimit(uid) {
+  const ref = db.doc(`joinAttempts/${uid}`);
+  const blocked = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const now = Date.now();
+    const data = snap.exists ? snap.data() : null;
+
+    if (!data || now - data.windowStart > JOIN_ATTEMPT_WINDOW_MS) {
+      tx.set(ref, { windowStart: now, count: 1 });
+      return false;
+    }
+    if (data.count >= JOIN_ATTEMPT_LIMIT) {
+      return true;
+    }
+    tx.update(ref, { count: admin.firestore.FieldValue.increment(1) });
+    return false;
+  });
+  if (blocked) {
+    throw new HttpsError('resource-exhausted', 'Too many attempts. Try again in a few minutes.');
+  }
+}
+
+// ------------------------------------------------------------
 // joinCanvassByCode: call after signing in anonymously.
 //   const joinCanvassByCode = httpsCallable(functions, 'joinCanvassByCode');
 //   const { campaignId, canvassId, canvassName } =
@@ -95,6 +147,8 @@ exports.joinCanvassByCode = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to join a canvass.');
   }
+
+  await checkJoinRateLimit(request.auth.uid);
 
   const code = (request.data.code || '').trim().toUpperCase();
   const displayName = (request.data.displayName || '').trim();

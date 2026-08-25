@@ -165,6 +165,17 @@ service cloud.firestore {
       }
     }
 
+    // ---------- join attempt rate limiting ----------
+    // Written only by the joinCanvassByCode Cloud Function (Admin SDK,
+    // bypasses these rules) to cap how many share-code guesses a given
+    // (anonymous) caller can make per window — never touched by a client
+    // directly. Denying read too, not just write: reading your own
+    // remaining count would let an attacker time their guesses around
+    // the window instead of just being slowed down by it.
+    match /joinAttempts/{uid} {
+      allow read, write: if false;
+    }
+
     // ---------- shareCodes ----------
     // Doc ID is the code itself, so it's only reachable if you already
     // know it — there's no way to list/enumerate codes. A manager
