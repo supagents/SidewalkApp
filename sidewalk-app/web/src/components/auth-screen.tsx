@@ -13,9 +13,17 @@ const labelClass = "block text-xs uppercase tracking-widest text-gray-500 mb-2 f
 
 const ROLE_OPTIONS = ["Candidate", "Campaign Manager", "Volunteer Coordinator", "Volunteer", "Other"];
 
-export function AuthScreen() {
-  const [screen, setScreen] = useState<"auth" | "join">("auth");
-  const [mode, setMode] = useState<"login" | "signup">("login");
+export function AuthScreen({
+  initialMode = "login",
+  initialScreen = "auth",
+  onBack,
+}: {
+  initialMode?: "login" | "signup";
+  initialScreen?: "auth" | "join";
+  onBack?: () => void;
+}) {
+  const [screen, setScreen] = useState<"auth" | "join">(initialScreen);
+  const [mode, setMode] = useState<"login" | "signup">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -83,6 +91,14 @@ export function AuthScreen() {
           giving the paired-up fields below room to sit side by side
           instead of stretching one field across the whole viewport. */}
       <div className="w-full max-w-sm md:max-w-2xl">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="text-sm text-gray-400 underline underline-offset-2 mb-5 ml-5"
+          >
+            ‹ Back to home
+          </button>
+        )}
         <div className="mb-1">
           <Logo />
         </div>

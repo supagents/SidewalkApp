@@ -196,13 +196,26 @@ service cloud.firestore {
     }
 
     // ---------- profiles ----------
-    // Optional: only needed if you store display names outside auth.
-    // Same `get`-not-`list` reasoning as shareCodes above — the client
-    // only ever fetches its own profile by uid, never lists the
-    // collection, so nothing here depends on `list` being allowed.
+    // Sign-up (see lib/profile.ts) writes first/last name, phone,
+    // birthday, organization, and role here. Same `get`-not-`list`
+    // reasoning as shareCodes above — the client only ever fetches its
+    // own profile by uid, never lists the collection, so nothing here
+    // depends on `list` being allowed.
     match /profiles/{uid} {
       allow get: if isSignedIn();
       allow write: if isSignedIn() && uid == request.auth.uid;
+    }
+
+    // ---------- site-wide stats (public landing page) ----------
+    // A single doc recomputed on a schedule by computeGlobalStats
+    // (Cloud Function, Admin SDK — see sidewalk-functions/index.js),
+    // never written by any client. It only ever holds aggregate counts
+    // (total campaigns, accounts, doors, lawn signs) — no campaign or
+    // user data — so it's safe to expose to signed-out visitors on the
+    // marketing landing page.
+    match /stats/global {
+      allow get: if true;
+      allow write: if false;
     }
   }
 }

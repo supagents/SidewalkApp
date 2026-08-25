@@ -17,6 +17,7 @@ import {
   subscribeCanvass,
   subscribeHouses,
   subscribeStreets,
+  toggleHouseLawnSign,
   toggleHouseRevisit,
   updateCanvassLocation,
   updateHouse,
@@ -258,6 +259,17 @@ export function CanvassScreen({
     }
   };
 
+  const handleLawnSignToggle = async (houseId: string) => {
+    if (!activeStreetId) return;
+    const h = activeHouses.find((x) => x.id === houseId);
+    if (!h) return;
+    try {
+      await toggleHouseLawnSign(campaignId, canvassId, activeStreetId, houseId, !h.lawnSign);
+    } catch {
+      flashError("Couldn't save. Check your connection.");
+    }
+  };
+
   const confirmDeleteNow = async (password?: string) => {
     if (!confirmDelete) return;
 
@@ -282,7 +294,7 @@ export function CanvassScreen({
         await deleteStreet(campaignId, canvassId, confirmDelete.id);
       } else if (activeStreetId) {
         const h = activeHouses.find((x) => x.id === confirmDelete.id);
-        await deleteHouse(campaignId, canvassId, activeStreetId, confirmDelete.id, !!h?.revisit);
+        await deleteHouse(campaignId, canvassId, activeStreetId, confirmDelete.id, !!h?.revisit, !!h?.lawnSign);
         if (expandedHouseId === confirmDelete.id) setExpandedHouseId(null);
       }
     } catch {
@@ -529,10 +541,7 @@ export function CanvassScreen({
                 expandedHouseId={expandedHouseId}
                 onToggleExpand={(id) => setExpandedHouseId((cur) => (cur === id ? null : id))}
                 onStatusChange={(id, status) => updateActiveHouse(id, { status })}
-                onLawnSignToggle={(id) => {
-                  const h = activeHouses.find((x) => x.id === id);
-                  if (h) updateActiveHouse(id, { lawnSign: !h.lawnSign });
-                }}
+                onLawnSignToggle={handleLawnSignToggle}
                 onRevisitToggle={handleRevisitToggle}
                 onNumberChange={(id, number) => updateActiveHouse(id, { number })}
                 onNotesChange={(id, notes) => updateActiveHouse(id, { notes })}

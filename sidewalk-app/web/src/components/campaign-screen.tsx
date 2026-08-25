@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { ChunkyBox } from "@/components/chunky-box";
 import { Logo } from "@/components/logo";
+import { ProfileMenu } from "@/components/profile-menu";
 import { Toast } from "@/components/toast";
 import { createCampaign, subscribeCampaigns } from "@/lib/campaign";
-import { logOut } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeProfile } from "@/lib/profile";
 import type { Campaign, UserProfile } from "@/lib/types";
@@ -29,11 +29,6 @@ export function CampaignScreen({ onOpenCampaign }: { onOpenCampaign: (id: string
     if (!user) return;
     return subscribeProfile(user.uid, setProfile);
   }, [user]);
-
-  // Accounts created before this feature shipped (or anyone whose
-  // profile write is still in flight) won't have a firstName yet —
-  // fall back to email rather than showing a blank greeting.
-  const greetingName = profile?.firstName || user?.email;
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -58,18 +53,9 @@ export function CampaignScreen({ onOpenCampaign }: { onOpenCampaign: (id: string
 
   return (
     <div className="flex flex-col flex-1 w-full max-w-2xl mx-auto">
-      <div className="px-5 pt-7 pb-5 flex items-start justify-between">
-        <div>
-          <Logo />
-          <div className="text-xs text-gray-500 ml-5 mt-0.5">Hi {greetingName}</div>
-        </div>
-        <button
-          onClick={() => logOut()}
-          title="Log out"
-          className="text-xs font-semibold text-gray-500 underline underline-offset-2 mt-1 flex-shrink-0"
-        >
-          Log out
-        </button>
+      <div className="px-5 pt-12 pb-5 flex items-center justify-between">
+        <Logo />
+        <ProfileMenu profile={profile} email={user?.email} />
       </div>
 
       <div className="px-5 pb-3">

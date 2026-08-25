@@ -37,6 +37,7 @@ export type Street = {
   position: number;
   houseCount: number;
   revisitCount: number;
+  lawnSignCount: number;
 };
 
 export type Canvass = {
@@ -48,6 +49,7 @@ export type Canvass = {
   streetCount: number;
   doorCount: number;
   revisitCount: number;
+  lawnSignCount: number;
   shareable: boolean;
   shareCode: string | null;
   city: string;
@@ -57,4 +59,12 @@ export type Canvass = {
 export type CanvassExport = {
   name: string;
   streets: { name: string; houses: House[] }[];
+};
+
+export type GlobalStats = {
+  totalCampaigns: number;
+  totalAccounts: number;
+  totalDoorsKnocked: number;
+  totalLawnSigns: number;
+  updatedAt: number;
 };

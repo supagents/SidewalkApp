@@ -6,6 +6,7 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 
@@ -233,6 +234,51 @@ async function geocode(address) {
   const { lat, lon } = results[0];
   return { lat: parseFloat(lat), lng: parseFloat(lon) };
 }
+
+// ------------------------------------------------------------
+// computeGlobalStats: recomputes the public "running tally" shown on
+// the signed-out landing page (stats/global — see lib/site-stats.ts
+// and components/landing-screen.tsx). Deliberately a full recompute on
+// a schedule rather than a per-write counter like doorCount/lawnSignCount
+// above: those are updated incrementally by the client (cheap, needs to
+// feel instant inside a canvass), but a *site-wide* incremental counter
+// would mean threading an extra write into every single house/campaign/
+// profile mutation across the whole app, and any missed edge case would
+// silently drift the public number forever. A scheduled recompute can't
+// drift — it's always derived fresh from the real data — and it also
+// means campaigns/accounts/canvasses that already existed before this
+// feature shipped get counted correctly on the very first run, with no
+// separate backfill step needed.
+//
+// Firestore's count()/sum() aggregation queries are used instead of
+// reading every document: they're billed as roughly one read per 1000
+// index entries matched, not one read per document, so this stays cheap
+// even as the platform grows. "Doors knocked" is doorCount (houses
+// logged into a canvass) rather than a stricter "status was set" count —
+// a simpler, already-accurate aggregate, at the cost of also counting
+// addresses added but not yet visited.
+// ------------------------------------------------------------
+exports.computeGlobalStats = onSchedule('every 60 minutes', async () => {
+  const [campaignsCount, profilesCount, canvassAgg] = await Promise.all([
+    db.collection('campaigns').count().get(),
+    db.collection('profiles').count().get(),
+    db
+      .collectionGroup('canvasses')
+      .aggregate({
+        totalDoors: admin.firestore.AggregateField.sum('doorCount'),
+        totalSigns: admin.firestore.AggregateField.sum('lawnSignCount'),
+      })
+      .get(),
+  ]);
+
+  await db.doc('stats/global').set({
+    totalCampaigns: campaignsCount.data().count,
+    totalAccounts: profilesCount.data().count,
+    totalDoorsKnocked: canvassAgg.data().totalDoors || 0,
+    totalLawnSigns: canvassAgg.data().totalSigns || 0,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+});
 
 exports.geocodeHouseOnWrite = onDocumentWritten(
   {

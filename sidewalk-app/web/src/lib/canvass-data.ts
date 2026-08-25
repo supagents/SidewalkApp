@@ -85,6 +85,7 @@ export function subscribeCanvasses(campaignId: string, cb: (canvasses: Canvass[]
           streetCount: data.streetCount ?? 0,
           doorCount: data.doorCount ?? 0,
           revisitCount: data.revisitCount ?? 0,
+          lawnSignCount: data.lawnSignCount ?? 0,
           shareable: !!data.shareable,
           shareCode: data.shareCode ?? null,
           city: data.city ?? "",
@@ -111,6 +112,7 @@ export async function createCanvass(
     streetCount: 0,
     doorCount: 0,
     revisitCount: 0,
+    lawnSignCount: 0,
     shareable: false,
     shareCode: null,
     city,
@@ -141,6 +143,7 @@ export function subscribeStreets(campaignId: string, canvassId: string, cb: (str
           position: data.position ?? 0,
           houseCount: data.houseCount ?? 0,
           revisitCount: data.revisitCount ?? 0,
+          lawnSignCount: data.lawnSignCount ?? 0,
         };
       })
     );
@@ -155,6 +158,7 @@ export async function addStreet(campaignId: string, canvassId: string, name: str
     position: Date.now(),
     houseCount: 0,
     revisitCount: 0,
+    lawnSignCount: 0,
   });
   batch.update(canvassRef(campaignId, canvassId), {
     streetCount: increment(1),
@@ -171,6 +175,7 @@ export async function renameStreet(campaignId: string, canvassId: string, street
 export async function deleteStreet(campaignId: string, canvassId: string, streetId: string) {
   const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetId));
   const revisitCount = housesSnap.docs.filter((d) => d.data().revisit).length;
+  const lawnSignCount = housesSnap.docs.filter((d) => d.data().lawnSign).length;
   const batch = writeBatch(db);
   housesSnap.docs.forEach((d) => batch.delete(d.ref));
   batch.delete(streetRef(campaignId, canvassId, streetId));
@@ -178,6 +183,7 @@ export async function deleteStreet(campaignId: string, canvassId: string, street
     streetCount: increment(-1),
     doorCount: increment(-housesSnap.size),
     revisitCount: increment(-revisitCount),
+    lawnSignCount: increment(-lawnSignCount),
     updatedAt: serverTimestamp(),
   });
   await batch.commit();
@@ -383,7 +389,7 @@ export async function updateHouse(
   canvassId: string,
   streetId: string,
   houseId: string,
-  patch: Partial<{ number: string; status: HouseStatus | null; lawnSign: boolean; notes: string }>
+  patch: Partial<{ number: string; status: HouseStatus | null; notes: string }>
 ) {
   await updateDoc(houseRef(campaignId, canvassId, streetId, houseId), patch);
   await updateDoc(canvassRef(campaignId, canvassId), { updatedAt: serverTimestamp() });
@@ -410,22 +416,45 @@ export async function toggleHouseRevisit(
   await batch.commit();
 }
 
+// Same shape as toggleHouseRevisit, for lawnSignCount — also the source
+// the site-wide "lawn signs" tally on the landing page adds up across
+// every canvass (see the computeGlobalStats Cloud Function).
+export async function toggleHouseLawnSign(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  lawnSign: boolean
+) {
+  const batch = writeBatch(db);
+  batch.update(houseRef(campaignId, canvassId, streetId, houseId), { lawnSign });
+  batch.update(streetRef(campaignId, canvassId, streetId), { lawnSignCount: increment(lawnSign ? 1 : -1) });
+  batch.update(canvassRef(campaignId, canvassId), {
+    lawnSignCount: increment(lawnSign ? 1 : -1),
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
 export async function deleteHouse(
   campaignId: string,
   canvassId: string,
   streetId: string,
   houseId: string,
-  wasRevisit: boolean = false
+  wasRevisit: boolean = false,
+  wasLawnSign: boolean = false
 ) {
   const batch = writeBatch(db);
   batch.delete(houseRef(campaignId, canvassId, streetId, houseId));
   batch.update(streetRef(campaignId, canvassId, streetId), {
     houseCount: increment(-1),
     ...(wasRevisit ? { revisitCount: increment(-1) } : {}),
+    ...(wasLawnSign ? { lawnSignCount: increment(-1) } : {}),
   });
   batch.update(canvassRef(campaignId, canvassId), {
     doorCount: increment(-1),
     ...(wasRevisit ? { revisitCount: increment(-1) } : {}),
+    ...(wasLawnSign ? { lawnSignCount: increment(-1) } : {}),
     updatedAt: serverTimestamp(),
   });
   await batch.commit();
@@ -496,6 +525,7 @@ export function subscribeCanvass(campaignId: string, canvassId: string, cb: (can
       streetCount: data.streetCount ?? 0,
       doorCount: data.doorCount ?? 0,
       revisitCount: data.revisitCount ?? 0,
+      lawnSignCount: data.lawnSignCount ?? 0,
       shareable: !!data.shareable,
       shareCode: data.shareCode ?? null,
       city: data.city ?? "",
