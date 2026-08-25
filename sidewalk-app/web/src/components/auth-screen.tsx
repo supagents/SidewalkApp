@@ -78,38 +78,40 @@ export function AuthScreen() {
 
   return (
     <div className="flex flex-col items-center justify-center px-6 flex-1">
-      <div className="w-full max-w-sm">
+      {/* max-w-sm keeps the phone layout exactly as it was — one column,
+          full-width fields. md:max-w-2xl only kicks in on wider screens,
+          giving the paired-up fields below room to sit side by side
+          instead of stretching one field across the whole viewport. */}
+      <div className="w-full max-w-sm md:max-w-2xl">
         <div className="mb-1">
           <Logo />
         </div>
         <div className="text-sm text-gray-500 mb-9 ml-5">Doorknocking, simplified.</div>
 
         {mode === "signup" && (
-          <>
-            <div className="flex gap-3">
-              <div className="flex-1 min-w-0">
-                <label className={labelClass}>First name</label>
-                <input
-                  autoFocus
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="Jamie"
-                  className={inputClass}
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <label className={labelClass}>Last name</label>
-                <input
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="Rivera"
-                  className={inputClass}
-                />
-              </div>
+          <div className="flex gap-3">
+            <div className="flex-1 min-w-0">
+              <label className={labelClass}>First name</label>
+              <input
+                autoFocus
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="Jamie"
+                className={inputClass}
+              />
             </div>
-          </>
+            <div className="flex-1 min-w-0">
+              <label className={labelClass}>Last name</label>
+              <input
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="Rivera"
+                className={inputClass}
+              />
+            </div>
+          </div>
         )}
 
         <label className={labelClass}>Email</label>
@@ -125,68 +127,97 @@ export function AuthScreen() {
 
         {mode === "signup" && (
           <>
-            <label className={labelClass}>Phone number</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="(555) 123-4567"
-              className={inputClass}
-            />
+            {/* Stacked on mobile (matches every other field there), paired
+                side by side from md: up — that's the "computer" layout
+                fix: these used to run one-per-row all the way down a wide
+                screen for no reason. */}
+            <div className="flex flex-col md:flex-row gap-0 md:gap-3">
+              <div className="flex-1 min-w-0">
+                <label className={labelClass}>Phone number</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  placeholder="(555) 123-4567"
+                  className={inputClass}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <label className={labelClass}>Birthday (optional)</label>
+                <input
+                  type="date"
+                  value={birthday}
+                  onChange={(e) => setBirthday(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
 
-            <label className={labelClass}>Birthday (optional)</label>
-            <input
-              type="date"
-              value={birthday}
-              onChange={(e) => setBirthday(e.target.value)}
-              className={inputClass}
-            />
-
-            <label className={labelClass}>Organization / campaign name</label>
-            <input
-              value={organization}
-              onChange={(e) => setOrganization(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="Rivera for City Council"
-              className={inputClass}
-            />
-
-            <label className={labelClass}>Your role</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className={inputClass + " appearance-none"}
-            >
-              <option value="" disabled>
-                Select one
-              </option>
-              {ROLE_OPTIONS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col md:flex-row gap-0 md:gap-3">
+              <div className="flex-1 min-w-0">
+                <label className={labelClass}>Organization / campaign name</label>
+                <input
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  placeholder="Rivera for City Council"
+                  className={inputClass}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <label className={labelClass}>Your role</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className={inputClass + " appearance-none"}
+                >
+                  <option value="" disabled>
+                    Select one
+                  </option>
+                  {ROLE_OPTIONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </>
         )}
 
-        <label className={labelClass}>Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder={mode === "signup" ? "At least 6 characters" : "••••••••"}
-          className={mode === "signup" ? inputClass.replace("mb-5", "mb-4") : inputClass}
-        />
-
-        {mode === "signup" && (
+        {mode === "signup" ? (
+          <div className="flex flex-col md:flex-row gap-0 md:gap-3">
+            <div className="flex-1 min-w-0">
+              <label className={labelClass}>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="At least 6 characters"
+                className={inputClass}
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <label className={labelClass}>Confirm password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="••••••••"
+                className={inputClass}
+              />
+            </div>
+          </div>
+        ) : (
           <>
-            <label className={labelClass}>Confirm password</label>
+            <label className={labelClass}>Password</label>
             <input
               type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
               placeholder="••••••••"
               className={inputClass}
