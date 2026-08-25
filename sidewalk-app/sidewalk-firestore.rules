@@ -42,13 +42,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Anonymous guests (isCanvassGuest below) never go through this — they
+    // have no email at all, and that's fine, they're not real accounts.
+    // Real accounts do: the app's own UI already blocks everything behind
+    // VerifyEmailScreen until this is true, but that's only a client-side
+    // route guard — nothing previously stopped an unverified account from
+    // reading/writing directly through the SDK, bypassing that screen
+    // entirely. Folding this into isMember/isManager (rather than
+    // scattering the check everywhere they're used) makes every rule built
+    // on top of them — including hasCanvassAccess's member branch — honor
+    // it automatically.
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
     function isMember(campaignId) {
-      return isSignedIn() &&
+      return isVerified() &&
         exists(/databases/$(database)/documents/campaigns/$(campaignId)/members/$(request.auth.uid));
     }
 
     function isManager(campaignId) {
-      return isSignedIn() &&
+      return isVerified() &&
         get(/databases/$(database)/documents/campaigns/$(campaignId)/members/$(request.auth.uid)).data.role == 'manager';
     }
 
@@ -61,20 +75,39 @@ service cloud.firestore {
       return isMember(campaignId) || isCanvassGuest(campaignId, canvassId);
     }
 
+    // request.auth.token.auth_time updates whenever the session actually
+    // (re)authenticates — including reauthenticateWithCredential, which is
+    // what the app calls right before deleting a campaign or canvass (see
+    // ConfirmDeleteModal's password field). Requiring it to be recent on
+    // those two deletes makes the password prompt a real server-side
+    // check, not just a client-side dialog a hijacked session (e.g. via
+    // an XSS payload, or a stolen token) could simply skip by calling the
+    // SDK directly with an otherwise-valid, already-signed-in session.
+    function recentlyReauthenticated() {
+      return isSignedIn() &&
+        (request.time.toMillis() / 1000 - request.auth.token.auth_time) < 300;
+    }
+
     // ---------- campaigns ----------
     match /campaigns/{campaignId} {
       allow read: if isMember(campaignId);
-      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if isManager(campaignId);
+      allow create: if isVerified() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isManager(campaignId);
+      allow delete: if isManager(campaignId) && recentlyReauthenticated();
 
       // ---------- members ----------
       // Client apps never write member docs directly — that only
       // happens via the acceptInvite Cloud Function (see functions/index.js),
       // which runs with the Admin SDK and bypasses these rules entirely.
       // This keeps "join a team" atomic and token-verified server-side.
+      // The delete here is the manager's own membership doc, cleaned up
+      // as part of deleting their campaign (lib/campaign.ts's
+      // deleteCampaign) — always immediately after the same
+      // reauthentication as the campaign delete above, so this needs it
+      // too, for the same reason.
       match /members/{uid} {
         allow read: if isMember(campaignId);
-        allow delete: if isManager(campaignId);
+        allow delete: if isManager(campaignId) && recentlyReauthenticated();
         allow write: if false;
       }
 
@@ -94,7 +127,7 @@ service cloud.firestore {
       match /canvasses/{canvassId} {
         allow read: if hasCanvassAccess(campaignId, canvassId);
         allow create, update: if hasCanvassAccess(campaignId, canvassId);
-        allow delete: if isManager(campaignId);
+        allow delete: if isManager(campaignId) && recentlyReauthenticated();
 
         // ---------- streets ----------
         match /streets/{streetId} {
