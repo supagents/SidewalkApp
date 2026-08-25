@@ -18,14 +18,12 @@ export function LandingScreen({
         <Logo />
 
         <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight mt-8 leading-tight">
-          Lean, modern canvassing —
-          <br />
-          built to knock doors, not slow you down.
+          Built to knock doors, not slow you down.
         </h1>
         <p className="text-gray-500 text-base sm:text-lg mt-5 max-w-xl">
-          Sidewalk is a fast, no-clutter platform for door-to-door campaigns: plan streets, log every
-          door in real time, track lawn signs and follow-ups, and hand volunteers a canvass with a
-          single code — no spreadsheets, no bloat.
+          Sidewalk is a fast, no-clutter platform for door-to-door campaigns. Plan your streets, log
+          every door in real time, track lawn signs and follow-ups, and get volunteers canvassing with
+          a single code. No spreadsheets. No bloat.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3 mt-8 w-full max-w-sm sm:max-w-none sm:w-auto">
