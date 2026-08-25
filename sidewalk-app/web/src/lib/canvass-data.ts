@@ -416,9 +416,7 @@ export async function toggleHouseRevisit(
   await batch.commit();
 }
 
-// Same shape as toggleHouseRevisit, for lawnSignCount — also the source
-// the site-wide "lawn signs" tally on the landing page adds up across
-// every canvass (see the computeGlobalStats Cloud Function).
+// Same shape as toggleHouseRevisit, for lawnSignCount.
 export async function toggleHouseLawnSign(
   campaignId: string,
   canvassId: string,

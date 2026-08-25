@@ -205,17 +205,5 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow write: if isSignedIn() && uid == request.auth.uid;
     }
-
-    // ---------- site-wide stats (public landing page) ----------
-    // A single doc recomputed on a schedule by computeGlobalStats
-    // (Cloud Function, Admin SDK — see sidewalk-functions/index.js),
-    // never written by any client. It only ever holds aggregate counts
-    // (total campaigns, accounts, doors, lawn signs) — no campaign or
-    // user data — so it's safe to expose to signed-out visitors on the
-    // marketing landing page.
-    match /stats/global {
-      allow get: if true;
-      allow write: if false;
-    }
   }
 }

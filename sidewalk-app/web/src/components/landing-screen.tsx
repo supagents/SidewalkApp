@@ -1,27 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
 import { ChunkyBox } from "@/components/chunky-box";
-import { subscribeGlobalStats } from "@/lib/site-stats";
-import type { GlobalStats } from "@/lib/types";
-
-function formatCount(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1) + "K";
-  return String(n);
-}
-
-function StatTile({ value, label, loading }: { value: number | null; label: string; loading: boolean }) {
-  return (
-    <div className="bg-white border-2 border-black rounded-xl px-4 py-5 text-center">
-      <div className="text-3xl sm:text-4xl font-extrabold tabular-nums">
-        {loading || value === null ? "—" : formatCount(value)}
-      </div>
-      <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold mt-1">{label}</div>
-    </div>
-  );
-}
 
 export function LandingScreen({
   onSignUp,
@@ -32,10 +12,6 @@ export function LandingScreen({
   onLogIn: () => void;
   onJoin: () => void;
 }) {
-  const [stats, setStats] = useState<GlobalStats | null>(null);
-
-  useEffect(() => subscribeGlobalStats(setStats), []);
-
   return (
     <div className="flex flex-col flex-1 items-center px-6 py-14 overflow-y-auto">
       <div className="w-full max-w-3xl flex flex-col items-center text-center">
@@ -72,18 +48,6 @@ export function LandingScreen({
         <button onClick={onJoin} className="text-sm text-gray-400 underline underline-offset-2 mt-5">
           Have a canvass code? Join instead
         </button>
-
-        <div className="w-full mt-16">
-          <div className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">
-            Powering campaigns right now
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatTile value={stats?.totalCampaigns ?? null} label="Campaigns" loading={!stats} />
-            <StatTile value={stats?.totalAccounts ?? null} label="Candidates & organizers" loading={!stats} />
-            <StatTile value={stats?.totalDoorsKnocked ?? null} label="Doors knocked" loading={!stats} />
-            <StatTile value={stats?.totalLawnSigns ?? null} label="Lawn signs placed" loading={!stats} />
-          </div>
-        </div>
       </div>
     </div>
   );

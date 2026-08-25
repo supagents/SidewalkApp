@@ -60,11 +60,3 @@ export type CanvassExport = {
   name: string;
   streets: { name: string; houses: House[] }[];
 };
-
-export type GlobalStats = {
-  totalCampaigns: number;
-  totalAccounts: number;
-  totalDoorsKnocked: number;
-  totalLawnSigns: number;
-  updatedAt: number;
-};
