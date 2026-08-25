@@ -25,6 +25,7 @@ export type Street = {
   name: string;
   position: number;
   houseCount: number;
+  revisitCount: number;
 };
 
 export type Canvass = {
@@ -35,6 +36,7 @@ export type Canvass = {
   updatedAt: number;
   streetCount: number;
   doorCount: number;
+  revisitCount: number;
   shareable: boolean;
   shareCode: string | null;
   city: string;

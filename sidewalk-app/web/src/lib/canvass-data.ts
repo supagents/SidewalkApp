@@ -84,6 +84,7 @@ export function subscribeCanvasses(campaignId: string, cb: (canvasses: Canvass[]
           updatedAt: data.updatedAt?.toMillis?.() ?? 0,
           streetCount: data.streetCount ?? 0,
           doorCount: data.doorCount ?? 0,
+          revisitCount: data.revisitCount ?? 0,
           shareable: !!data.shareable,
           shareCode: data.shareCode ?? null,
           city: data.city ?? "",
@@ -109,6 +110,7 @@ export async function createCanvass(
     updatedAt: serverTimestamp(),
     streetCount: 0,
     doorCount: 0,
+    revisitCount: 0,
     shareable: false,
     shareCode: null,
     city,
@@ -138,6 +140,7 @@ export function subscribeStreets(campaignId: string, canvassId: string, cb: (str
           name: data.name,
           position: data.position ?? 0,
           houseCount: data.houseCount ?? 0,
+          revisitCount: data.revisitCount ?? 0,
         };
       })
     );
@@ -151,6 +154,7 @@ export async function addStreet(campaignId: string, canvassId: string, name: str
     name,
     position: Date.now(),
     houseCount: 0,
+    revisitCount: 0,
   });
   batch.update(canvassRef(campaignId, canvassId), {
     streetCount: increment(1),
@@ -166,12 +170,14 @@ export async function renameStreet(campaignId: string, canvassId: string, street
 
 export async function deleteStreet(campaignId: string, canvassId: string, streetId: string) {
   const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetId));
+  const revisitCount = housesSnap.docs.filter((d) => d.data().revisit).length;
   const batch = writeBatch(db);
   housesSnap.docs.forEach((d) => batch.delete(d.ref));
   batch.delete(streetRef(campaignId, canvassId, streetId));
   batch.update(canvassRef(campaignId, canvassId), {
     streetCount: increment(-1),
     doorCount: increment(-housesSnap.size),
+    revisitCount: increment(-revisitCount),
     updatedAt: serverTimestamp(),
   });
   await batch.commit();
@@ -377,17 +383,51 @@ export async function updateHouse(
   canvassId: string,
   streetId: string,
   houseId: string,
-  patch: Partial<{ number: string; status: HouseStatus | null; lawnSign: boolean; revisit: boolean; notes: string }>
+  patch: Partial<{ number: string; status: HouseStatus | null; lawnSign: boolean; notes: string }>
 ) {
   await updateDoc(houseRef(campaignId, canvassId, streetId, houseId), patch);
   await updateDoc(canvassRef(campaignId, canvassId), { updatedAt: serverTimestamp() });
 }
 
-export async function deleteHouse(campaignId: string, canvassId: string, streetId: string, houseId: string) {
+// Split out from updateHouse because toggling this one field also has to
+// keep the street's and canvass's revisitCount counters (used for the
+// follow-up badges in StreetNav/CanvassScreen/HomeScreen) in sync — a
+// plain patch has no way to know the previous value to compute the delta.
+export async function toggleHouseRevisit(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  revisit: boolean
+) {
+  const batch = writeBatch(db);
+  batch.update(houseRef(campaignId, canvassId, streetId, houseId), { revisit });
+  batch.update(streetRef(campaignId, canvassId, streetId), { revisitCount: increment(revisit ? 1 : -1) });
+  batch.update(canvassRef(campaignId, canvassId), {
+    revisitCount: increment(revisit ? 1 : -1),
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+export async function deleteHouse(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  wasRevisit: boolean = false
+) {
   const batch = writeBatch(db);
   batch.delete(houseRef(campaignId, canvassId, streetId, houseId));
-  batch.update(streetRef(campaignId, canvassId, streetId), { houseCount: increment(-1) });
-  batch.update(canvassRef(campaignId, canvassId), { doorCount: increment(-1), updatedAt: serverTimestamp() });
+  batch.update(streetRef(campaignId, canvassId, streetId), {
+    houseCount: increment(-1),
+    ...(wasRevisit ? { revisitCount: increment(-1) } : {}),
+  });
+  batch.update(canvassRef(campaignId, canvassId), {
+    doorCount: increment(-1),
+    ...(wasRevisit ? { revisitCount: increment(-1) } : {}),
+    updatedAt: serverTimestamp(),
+  });
   await batch.commit();
 }
 
@@ -455,6 +495,7 @@ export function subscribeCanvass(campaignId: string, canvassId: string, cb: (can
       updatedAt: data.updatedAt?.toMillis?.() ?? 0,
       streetCount: data.streetCount ?? 0,
       doorCount: data.doorCount ?? 0,
+      revisitCount: data.revisitCount ?? 0,
       shareable: !!data.shareable,
       shareCode: data.shareCode ?? null,
       city: data.city ?? "",

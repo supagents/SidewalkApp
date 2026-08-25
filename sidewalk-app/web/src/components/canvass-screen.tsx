@@ -17,6 +17,7 @@ import {
   subscribeCanvass,
   subscribeHouses,
   subscribeStreets,
+  toggleHouseRevisit,
   updateCanvassLocation,
   updateHouse,
 } from "@/lib/canvass-data";
@@ -246,6 +247,17 @@ export function CanvassScreen({
     }
   };
 
+  const handleRevisitToggle = async (houseId: string) => {
+    if (!activeStreetId) return;
+    const h = activeHouses.find((x) => x.id === houseId);
+    if (!h) return;
+    try {
+      await toggleHouseRevisit(campaignId, canvassId, activeStreetId, houseId, !h.revisit);
+    } catch {
+      flashError("Couldn't save. Check your connection.");
+    }
+  };
+
   const confirmDeleteNow = async (password?: string) => {
     if (!confirmDelete) return;
 
@@ -269,7 +281,8 @@ export function CanvassScreen({
       if (confirmDelete.type === "street") {
         await deleteStreet(campaignId, canvassId, confirmDelete.id);
       } else if (activeStreetId) {
-        await deleteHouse(campaignId, canvassId, activeStreetId, confirmDelete.id);
+        const h = activeHouses.find((x) => x.id === confirmDelete.id);
+        await deleteHouse(campaignId, canvassId, activeStreetId, confirmDelete.id, !!h?.revisit);
         if (expandedHouseId === confirmDelete.id) setExpandedHouseId(null);
       }
     } catch {
@@ -351,6 +364,12 @@ export function CanvassScreen({
             {canvass.streetCount} street{canvass.streetCount === 1 ? "" : "s"} · {canvass.doorCount} door
             {canvass.doorCount === 1 ? "" : "s"}
           </div>
+          {canvass.revisitCount > 0 && (
+            <div className="flex items-center gap-1.5 mt-1 text-xs font-bold text-red-600">
+              <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" />
+              {canvass.revisitCount} flagged for follow-up
+            </div>
+          )}
           {editingLocation ? (
             <div className="flex items-center gap-1.5 mt-1">
               <input
@@ -514,10 +533,7 @@ export function CanvassScreen({
                   const h = activeHouses.find((x) => x.id === id);
                   if (h) updateActiveHouse(id, { lawnSign: !h.lawnSign });
                 }}
-                onRevisitToggle={(id) => {
-                  const h = activeHouses.find((x) => x.id === id);
-                  if (h) updateActiveHouse(id, { revisit: !h.revisit });
-                }}
+                onRevisitToggle={handleRevisitToggle}
                 onNumberChange={(id, number) => updateActiveHouse(id, { number })}
                 onNotesChange={(id, notes) => updateActiveHouse(id, { notes })}
                 onDelete={(id) => {

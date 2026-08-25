@@ -288,6 +288,12 @@ export function HomeScreen({
                         {c.streetCount} street{c.streetCount === 1 ? "" : "s"} · {c.doorCount} door
                         {c.doorCount === 1 ? "" : "s"}
                       </div>
+                      {c.revisitCount > 0 && (
+                        <div className="flex items-center gap-1.5 mt-1 text-xs font-bold text-red-600">
+                          <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" />
+                          {c.revisitCount} flagged
+                        </div>
+                      )}
                     </div>
                     <div className="w-7 h-7 rounded-full border-2 border-black flex items-center justify-center flex-shrink-0 ml-3">
                       ›
