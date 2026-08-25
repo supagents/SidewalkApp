@@ -13,6 +13,17 @@ export type House = {
   lng: number | null;
 };
 
+export type UserProfile = {
+  uid: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  birthday: string;
+  organization: string;
+  role: string;
+  createdAt: number;
+};
+
 export type Campaign = {
   id: string;
   name: string;

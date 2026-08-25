@@ -5,13 +5,20 @@ import {
   sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
+  updateProfile,
   type AuthError,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { createProfile, type NewProfileData } from "@/lib/profile";
 
-export async function signUp(email: string, password: string) {
+export async function signUp(email: string, password: string, profile: NewProfileData) {
   const credential = await createUserWithEmailAndPassword(auth, email, password);
-  await sendEmailVerification(credential.user);
+  const displayName = `${profile.firstName} ${profile.lastName}`.trim();
+  await Promise.all([
+    updateProfile(credential.user, { displayName }),
+    createProfile(credential.user.uid, profile),
+    sendEmailVerification(credential.user),
+  ]);
   return credential.user;
 }
 

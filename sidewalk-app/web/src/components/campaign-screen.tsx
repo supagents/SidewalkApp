@@ -8,11 +8,13 @@ import { Toast } from "@/components/toast";
 import { createCampaign, subscribeCampaigns } from "@/lib/campaign";
 import { logOut } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
-import type { Campaign } from "@/lib/types";
+import { subscribeProfile } from "@/lib/profile";
+import type { Campaign, UserProfile } from "@/lib/types";
 
 export function CampaignScreen({ onOpenCampaign }: { onOpenCampaign: (id: string) => void }) {
   const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -22,6 +24,16 @@ export function CampaignScreen({ onOpenCampaign }: { onOpenCampaign: (id: string
     if (!user) return;
     return subscribeCampaigns(user.uid, setCampaigns);
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeProfile(user.uid, setProfile);
+  }, [user]);
+
+  // Accounts created before this feature shipped (or anyone whose
+  // profile write is still in flight) won't have a firstName yet —
+  // fall back to email rather than showing a blank greeting.
+  const greetingName = profile?.firstName || user?.email;
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -49,7 +61,7 @@ export function CampaignScreen({ onOpenCampaign }: { onOpenCampaign: (id: string
       <div className="px-5 pt-7 pb-5 flex items-start justify-between">
         <div>
           <Logo />
-          <div className="text-xs text-gray-500 ml-5 mt-0.5">Hi {user?.email}</div>
+          <div className="text-xs text-gray-500 ml-5 mt-0.5">Hi {greetingName}</div>
         </div>
         <button
           onClick={() => logOut()}
