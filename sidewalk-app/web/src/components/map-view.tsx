@@ -123,6 +123,20 @@ function LayersPanel({
   );
 }
 
+// Leaflet's bindPopup treats a string argument as raw HTML, not text — and
+// popup content here (a house address built from a user-editable street
+// name, or an overlay's name/label pulled from an uploaded file's
+// attribute data) is never something we control. Building a real DOM node
+// and setting textContent (rather than interpolating into an HTML string)
+// means whatever's in there renders as literal text, never executes.
+function popupContent(text: string): HTMLDivElement {
+  const div = document.createElement("div");
+  div.style.fontFamily = "'Helvetica Neue',Helvetica,Arial,sans-serif";
+  div.style.fontWeight = "700";
+  div.textContent = text;
+  return div;
+}
+
 function pinIcon(color: string) {
   return L.divIcon({
     className: "",
@@ -226,9 +240,7 @@ export function MapView({
           style: { color: o.color, weight: 2, fillColor: o.color, fillOpacity: 0.08 },
           onEachFeature: (feature, l) => {
             const label = feature.properties?.label as string | null | undefined;
-            l.bindPopup(
-              `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:700;">${label || o.name}</div>`
-            );
+            l.bindPopup(popupContent(label || o.name));
           },
         });
         overlayLayersRef.current.set(o.id, layer);
@@ -250,7 +262,7 @@ export function MapView({
     const markers = pinned.map((h) => {
       const color = h.status ? STATUS_COLORS[h.status] : NO_STATUS_COLOR;
       return L.marker([h.lat as number, h.lng as number], { icon: pinIcon(color) }).bindPopup(
-        `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:700;">${h.address || h.number}</div>`
+        popupContent(h.address || h.number)
       );
     });
     clusterGroup.addLayers(markers);

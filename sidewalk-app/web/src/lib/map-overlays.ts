@@ -161,6 +161,16 @@ async function parseFile(file: File): Promise<unknown> {
   return JSON.parse(text);
 }
 
+// Checked before any parsing happens — shpjs/togeojson/JSON.parse all read
+// the whole file into memory, and a wrong/huge file (or a maliciously
+// crafted small zip that decompresses far larger, i.e. a zip bomb) can
+// hang the uploader's own tab well before the parsed-size check further
+// down ever runs. This isn't full zip-bomb protection (that needs
+// inspecting the archive's compression ratio before fully decompressing
+// it), but it does bound the worst case and catches the common "picked
+// the wrong file" mistake immediately.
+const MAX_UPLOAD_FILE_BYTES = 20_000_000;
+
 export async function uploadMapOverlay(
   campaignId: string,
   canvassId: string,
@@ -169,6 +179,14 @@ export async function uploadMapOverlay(
   file: File,
   colorIndex: number
 ): Promise<void> {
+  if (file.size > MAX_UPLOAD_FILE_BYTES) {
+    throw new Error(
+      `That file is too large (${Math.round(file.size / 1_000_000)}MB, limit ${Math.round(
+        MAX_UPLOAD_FILE_BYTES / 1_000_000
+      )}MB) to parse in the browser. Simplify it first — mapshaper.org is a free tool for this — then try again.`
+    );
+  }
+
   let raw: unknown;
   try {
     raw = await parseFile(file);
