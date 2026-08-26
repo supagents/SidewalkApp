@@ -6,16 +6,16 @@ function LogoMark({ size = 28 }: { size?: number }) {
         fill="black"
       />
       <path
-        d="M2 13.2a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 13.2"
+        d="M2 12.6a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12.6"
         stroke="black"
-        strokeWidth={4.6}
+        strokeWidth={4}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="M2 19.6a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 19.6"
+        d="M2 18a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 18"
         stroke="black"
-        strokeWidth={4.6}
+        strokeWidth={4}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
