@@ -53,6 +53,7 @@ export function AuthScreen({
   const [birthday, setBirthday] = useState("");
   const [organization, setOrganization] = useState("");
   const [role, setRole] = useState("");
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -65,10 +66,18 @@ export function AuthScreen({
     setMode(next);
     setPassword("");
     setConfirmPassword("");
+    setAgreedToTerms(false);
   };
 
   const signupReady =
-    firstName.trim() && lastName.trim() && phone.trim() && birthday && organization.trim() && role && confirmPassword;
+    firstName.trim() &&
+    lastName.trim() &&
+    phone.trim() &&
+    birthday &&
+    organization.trim() &&
+    role &&
+    confirmPassword &&
+    agreedToTerms;
 
   const submit = async () => {
     if (!email.trim() || !password) return;
@@ -267,17 +276,37 @@ export function AuthScreen({
         )}
 
         {mode === "signup" && (
-          <div className="text-xs text-gray-400 mb-5 leading-relaxed">
-            By signing up, you agree to Sidewalk&rsquo;s{" "}
-            <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
-              Terms of Service
-            </a>{" "}
-            and{" "}
-            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
-              Privacy Policy
-            </a>
-            .
-          </div>
+          <label className="flex items-start gap-2.5 mb-5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={agreedToTerms}
+              onChange={(e) => setAgreedToTerms(e.target.checked)}
+              className="mt-0.5 w-[18px] h-[18px] flex-shrink-0 accent-black border-2 border-black rounded cursor-pointer"
+            />
+            <span className="text-xs text-gray-500 leading-relaxed">
+              I agree to Sidewalk&rsquo;s{" "}
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="underline underline-offset-2 font-semibold text-gray-700"
+              >
+                Terms of Service
+              </a>{" "}
+              and{" "}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="underline underline-offset-2 font-semibold text-gray-700"
+              >
+                Privacy Policy
+              </a>
+              .
+            </span>
+          </label>
         )}
 
         <ChunkyBox rounded="rounded-xl">
