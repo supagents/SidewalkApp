@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CanvassScreen } from "@/components/canvass-screen";
 import { AuthScreen } from "@/components/auth-screen";
+import { LoadingScreen } from "@/components/loading-screen";
 import { clearGuestSession, getStoredGuestSession, type GuestSession } from "@/lib/share";
 import { logOut } from "@/lib/auth";
 
@@ -60,11 +61,7 @@ export function GuestCanvassScreen() {
   }, [checked, session]);
 
   if (!checked) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!session) {

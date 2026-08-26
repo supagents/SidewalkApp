@@ -31,6 +31,7 @@ import { HouseList } from "@/components/house-list";
 import { AddHouseBar } from "@/components/add-house-bar";
 import { ConfirmDeleteModal, type ConfirmDeleteTarget } from "@/components/confirm-delete-modal";
 import { ImportCSVModal } from "@/components/import-csv-modal";
+import { LoadingScreen } from "@/components/loading-screen";
 import { StatsBar } from "@/components/stats-bar";
 import { SharePanel } from "@/components/share-panel";
 import { ExportMenu } from "@/components/export-menu";
@@ -172,11 +173,7 @@ export function CanvassScreen({
   }, [statsPanelOpen, statsScope, campaignId, canvassId]);
 
   if (!canvass) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   const activeStreet = streets.find((s) => s.id === activeStreetId) || null;
@@ -555,9 +552,7 @@ export function CanvassScreen({
             {activeStreet && <AddHouseBar onAdd={handleAddHouses} />}
           </div>
         ) : loadingMapHouses ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
-          </div>
+          <LoadingScreen />
         ) : (
           <MapView
             houses={mapHouses}

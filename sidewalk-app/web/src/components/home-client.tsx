@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AuthScreen } from "@/components/auth-screen";
-import { AppShell } from "@/components/app-shell";
 import { GuestCanvassScreen } from "@/components/guest-canvass-screen";
 import { LandingScreen } from "@/components/landing-screen";
+import { LoadingScreen } from "@/components/loading-screen";
 import { VerifyEmailScreen } from "@/components/verify-email-screen";
 import { useAuth } from "@/lib/auth-context";
 
@@ -12,15 +13,18 @@ type AuthEntry = { mode: "login" | "signup"; screen: "auth" | "join" };
 
 export function HomeClient() {
   const { user, loading } = useAuth();
+  const router = useRouter();
   const [authEntry, setAuthEntry] = useState<AuthEntry | null>(null);
+  const fullyAuthed = !loading && !!user && !user.isAnonymous && user.emailVerified;
 
-  if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
-      </div>
-    );
-  }
+  // Signed-in, verified members live under /campaigns (real routes, so
+  // refreshing or sharing a link keeps you where you were) — "/" is only
+  // the signed-out/loading/guest/unverified gateway.
+  useEffect(() => {
+    if (fullyAuthed) router.replace("/campaigns");
+  }, [fullyAuthed, router]);
+
+  if (loading) return <LoadingScreen />;
 
   if (!user) {
     if (!authEntry) {
@@ -43,5 +47,5 @@ export function HomeClient() {
 
   if (user.isAnonymous) return <GuestCanvassScreen />;
   if (!user.emailVerified) return <VerifyEmailScreen />;
-  return <AppShell />;
+  return <LoadingScreen />;
 }
