@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { ChunkyBox } from "@/components/chunky-box";
 
@@ -46,6 +47,16 @@ export function LandingScreen({
         <button onClick={onJoin} className="text-sm text-gray-400 underline underline-offset-2 mt-5">
           Have a canvass code? Join instead
         </button>
+
+        <div className="flex items-center gap-3 text-xs text-gray-400 mt-16">
+          <Link href="/terms" className="underline underline-offset-2">
+            Terms of Service
+          </Link>
+          <span aria-hidden="true">·</span>
+          <Link href="/privacy" className="underline underline-offset-2">
+            Privacy Policy
+          </Link>
+        </div>
       </div>
     </div>
   );

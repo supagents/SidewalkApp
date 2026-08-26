@@ -266,6 +266,20 @@ export function AuthScreen({
           </>
         )}
 
+        {mode === "signup" && (
+          <div className="text-xs text-gray-400 mb-5 leading-relaxed">
+            By signing up, you agree to Sidewalk&rsquo;s{" "}
+            <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+              Privacy Policy
+            </a>
+            .
+          </div>
+        )}
+
         <ChunkyBox rounded="rounded-xl">
           <button
             onClick={submit}
