@@ -13,6 +13,26 @@ const labelClass = "block text-xs uppercase tracking-widest text-gray-500 mb-2 f
 
 const ROLE_OPTIONS = ["Candidate", "Campaign Manager", "Volunteer Coordinator", "Volunteer", "Other"];
 
+// Self-attested, like age gates on virtually every consumer platform — there's
+// no ID-verification step here, just a hard block on the birthdate the person
+// themselves entered. Computed by calendar date (not just year subtraction) so
+// someone whose 18th birthday hasn't happened yet this year is still blocked.
+function isAtLeast18(birthday: string): boolean {
+  const dob = new Date(birthday);
+  if (Number.isNaN(dob.getTime())) return false;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
+  return age >= 18;
+}
+
+function eighteenYearsAgo(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().slice(0, 10);
+}
+
 export function AuthScreen({
   initialMode = "login",
   initialScreen = "auth",
@@ -48,7 +68,7 @@ export function AuthScreen({
   };
 
   const signupReady =
-    firstName.trim() && lastName.trim() && phone.trim() && organization.trim() && role && confirmPassword;
+    firstName.trim() && lastName.trim() && phone.trim() && birthday && organization.trim() && role && confirmPassword;
 
   const submit = async () => {
     if (!email.trim() || !password) return;
@@ -56,6 +76,10 @@ export function AuthScreen({
       if (!signupReady) return;
       if (password !== confirmPassword) {
         flashError("Passwords don't match.");
+        return;
+      }
+      if (!isAtLeast18(birthday)) {
+        flashError("You must be 18 or older to create an account.");
         return;
       }
     }
@@ -160,11 +184,12 @@ export function AuthScreen({
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <label className={labelClass}>Birthday (optional)</label>
+                <label className={labelClass}>Birthday</label>
                 <input
                   type="date"
                   value={birthday}
                   onChange={(e) => setBirthday(e.target.value)}
+                  max={eighteenYearsAgo()}
                   className={inputClass}
                 />
               </div>
