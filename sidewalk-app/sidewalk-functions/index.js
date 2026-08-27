@@ -222,16 +222,32 @@ async function waitForGeocodeSlot() {
   if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
 }
 
+// Nominatim's free-text search doesn't just fail when the exact
+// street/house can't be matched — it progressively drops tokens and
+// returns whatever broader area it CAN match (a neighbourhood, a city,
+// even a whole province), which is common for newer or private
+// subdivision streets that OpenStreetMap doesn't have mapped yet.
+// Silently accepting that fallback drops the pin somewhere generic and
+// far from the real address — on the map that reads as "this is
+// broken", not "this address hasn't been geocoded yet". addressdetails=1
+// lets us check the match actually resolved to a real road; if it
+// didn't, treat it the same as no match at all (lat/lng stays unset)
+// rather than plotting a misleading pin. countrycodes=ca narrows the
+// (unqualified, no-country) address strings this app builds to Canada,
+// which is the only country Sidewalk operates in — without it, a query
+// like "Woodbridge, ON" can resolve ambiguously against places with the
+// same name elsewhere in the world.
 async function geocode(address) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&countrycodes=ca&q=${encodeURIComponent(address)}`;
   const res = await fetch(url, {
     headers: { 'User-Agent': 'SidewalkCanvassApp/1.0 (doorknocking canvass tool)' },
   });
   if (!res.ok) throw new Error(`Nominatim responded ${res.status}`);
   const results = await res.json();
   if (!Array.isArray(results) || results.length === 0) return null;
-  const { lat, lon } = results[0];
-  return { lat: parseFloat(lat), lng: parseFloat(lon) };
+  const match = results[0];
+  if (!match.address?.road) return null;
+  return { lat: parseFloat(match.lat), lng: parseFloat(match.lon) };
 }
 
 exports.geocodeHouseOnWrite = onDocumentWritten(
