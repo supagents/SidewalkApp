@@ -22,6 +22,15 @@ export function VerifyEmailScreen() {
     try {
       await auth.currentUser?.reload();
       if (auth.currentUser?.emailVerified) {
+        // reload() refreshes the client-side user profile (emailVerified
+        // flips true here), but the signed-in session's auth token — the
+        // thing Firestore rules actually check via request.auth.token
+        // .email_verified — keeps whatever claims it had when it was
+        // issued until it's force-refreshed. Without this, a freshly
+        // verified user sails into the dashboard but every write (e.g.
+        // creating a campaign) keeps getting denied by the rules until
+        // the token happens to naturally refresh, up to an hour later.
+        await auth.currentUser?.getIdToken(true);
         window.location.reload();
       } else {
         flash("Still not verified — check your inbox (and spam folder).");
