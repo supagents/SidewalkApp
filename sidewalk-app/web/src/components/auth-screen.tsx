@@ -33,6 +33,10 @@ function eighteenYearsAgo(): string {
   return d.toISOString().slice(0, 10);
 }
 
+function isStrongPassword(password: string): boolean {
+  return password.length >= 8 && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+}
+
 export function AuthScreen({
   initialMode = "login",
   initialScreen = "auth",
@@ -85,6 +89,10 @@ export function AuthScreen({
       if (!signupReady) return;
       if (password !== confirmPassword) {
         flashError("Passwords don't match.");
+        return;
+      }
+      if (!isStrongPassword(password)) {
+        flashError("Password must be 8+ characters with a number and a symbol.");
         return;
       }
       if (!isAtLeast18(birthday)) {
@@ -245,7 +253,7 @@ export function AuthScreen({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
-                placeholder="At least 6 characters"
+                placeholder="8+ chars, 1 number, 1 symbol"
                 className={inputClass}
               />
             </div>
