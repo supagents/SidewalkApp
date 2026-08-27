@@ -15,6 +15,7 @@ export function HouseRow({
   onNumberChange,
   onNotesChange,
   onDelete,
+  canDelete = true,
 }: {
   house: House;
   expanded: boolean;
@@ -25,6 +26,7 @@ export function HouseRow({
   onNumberChange: (number: string) => void;
   onNotesChange: (notes: string) => void;
   onDelete: () => void;
+  canDelete?: boolean;
 }) {
   const [editingNumber, setEditingNumber] = useState(false);
   const [numberDraft, setNumberDraft] = useState(house.number);
@@ -100,9 +102,11 @@ export function HouseRow({
           {expanded ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
         </button>
 
-        <button onClick={onDelete} className="flex-shrink-0 p-0.5 text-gray-300">
-          <X size={15} />
-        </button>
+        {canDelete && (
+          <button onClick={onDelete} className="flex-shrink-0 p-0.5 text-gray-300">
+            <X size={15} />
+          </button>
+        )}
       </div>
 
       {expanded && (

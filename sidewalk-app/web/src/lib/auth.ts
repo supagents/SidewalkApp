@@ -1,15 +1,24 @@
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
+  updateProfile,
   type AuthError,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { createProfile, type NewProfileData } from "@/lib/profile";
 
-export async function signUp(email: string, password: string) {
+export async function signUp(email: string, password: string, profile: NewProfileData) {
   const credential = await createUserWithEmailAndPassword(auth, email, password);
-  await sendEmailVerification(credential.user);
+  const displayName = `${profile.firstName} ${profile.lastName}`.trim();
+  await Promise.all([
+    updateProfile(credential.user, { displayName }),
+    createProfile(credential.user.uid, profile),
+    sendEmailVerification(credential.user),
+  ]);
   return credential.user;
 }
 
@@ -20,6 +29,22 @@ export async function logIn(email: string, password: string) {
 
 export async function logOut() {
   await signOut(auth);
+}
+
+// Used to gate destructive actions (deleting a campaign or canvass) behind
+// re-entering the account password, even though the user is already signed
+// in. This isn't just a client-side confirmation dialog: Firestore rules
+// independently check request.auth.token.auth_time (which reauthentication
+// updates) before allowing those deletes, so a hijacked/stolen session
+// can't just skip the password prompt and delete directly through the SDK.
+// The explicit getIdToken(true) forces a fresh token carrying that updated
+// auth_time immediately — without it, the very next Firestore call could
+// still be using the old cached token and get denied.
+export async function reauthenticate(password: string) {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error("Not signed in.");
+  await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  await user.getIdToken(true);
 }
 
 export async function resendVerificationEmail() {

@@ -1,6 +1,8 @@
 import {
   collection,
+  deleteDoc,
   doc,
+  type DocumentReference,
   getDocs,
   increment,
   onSnapshot,
@@ -13,6 +15,32 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Canvass, CanvassExport, House, HouseStatus, Street } from "@/lib/types";
+import type { ParsedImport } from "@/lib/voter-import";
+
+// Firestore caps a batch at 500 writes; this leaves headroom for a canvass
+// with enough streets/houses to approach that.
+const BATCH_CHUNK_SIZE = 450;
+
+async function deleteRefsInChunks(refs: DocumentReference[]) {
+  for (let i = 0; i < refs.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + BATCH_CHUNK_SIZE).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+}
+
+type WriteOp = { ref: DocumentReference; data: object; merge?: boolean };
+
+async function setRefsInChunks(ops: WriteOp[]) {
+  for (let i = 0; i < ops.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + BATCH_CHUNK_SIZE).forEach((op) => {
+      if (op.merge) batch.set(op.ref, op.data, { merge: true });
+      else batch.set(op.ref, op.data);
+    });
+    await batch.commit();
+  }
+}
 
 function campaignRef(campaignId: string) {
   return doc(db, "campaigns", campaignId);
@@ -56,6 +84,8 @@ export function subscribeCanvasses(campaignId: string, cb: (canvasses: Canvass[]
           updatedAt: data.updatedAt?.toMillis?.() ?? 0,
           streetCount: data.streetCount ?? 0,
           doorCount: data.doorCount ?? 0,
+          revisitCount: data.revisitCount ?? 0,
+          lawnSignCount: data.lawnSignCount ?? 0,
           shareable: !!data.shareable,
           shareCode: data.shareCode ?? null,
           city: data.city ?? "",
@@ -81,6 +111,8 @@ export async function createCanvass(
     updatedAt: serverTimestamp(),
     streetCount: 0,
     doorCount: 0,
+    revisitCount: 0,
+    lawnSignCount: 0,
     shareable: false,
     shareCode: null,
     city,
@@ -110,6 +142,8 @@ export function subscribeStreets(campaignId: string, canvassId: string, cb: (str
           name: data.name,
           position: data.position ?? 0,
           houseCount: data.houseCount ?? 0,
+          revisitCount: data.revisitCount ?? 0,
+          lawnSignCount: data.lawnSignCount ?? 0,
         };
       })
     );
@@ -123,6 +157,8 @@ export async function addStreet(campaignId: string, canvassId: string, name: str
     name,
     position: Date.now(),
     houseCount: 0,
+    revisitCount: 0,
+    lawnSignCount: 0,
   });
   batch.update(canvassRef(campaignId, canvassId), {
     streetCount: increment(1),
@@ -138,15 +174,34 @@ export async function renameStreet(campaignId: string, canvassId: string, street
 
 export async function deleteStreet(campaignId: string, canvassId: string, streetId: string) {
   const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetId));
+  const revisitCount = housesSnap.docs.filter((d) => d.data().revisit).length;
+  const lawnSignCount = housesSnap.docs.filter((d) => d.data().lawnSign).length;
   const batch = writeBatch(db);
   housesSnap.docs.forEach((d) => batch.delete(d.ref));
   batch.delete(streetRef(campaignId, canvassId, streetId));
   batch.update(canvassRef(campaignId, canvassId), {
     streetCount: increment(-1),
     doorCount: increment(-housesSnap.size),
+    revisitCount: increment(-revisitCount),
+    lawnSignCount: increment(-lawnSignCount),
     updatedAt: serverTimestamp(),
   });
   await batch.commit();
+}
+
+// Deletes every street and house under a canvass, then the canvass itself.
+// Unlike deleteStreet, a whole canvass can easily exceed one batch's 500-write
+// cap, so this goes through deleteRefsInChunks rather than one writeBatch.
+export async function deleteCanvass(campaignId: string, canvassId: string) {
+  const streetsSnap = await getDocs(streetsCol(campaignId, canvassId));
+  const houseRefs: DocumentReference[] = [];
+  for (const streetDoc of streetsSnap.docs) {
+    const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetDoc.id));
+    housesSnap.docs.forEach((d) => houseRefs.push(d.ref));
+  }
+  await deleteRefsInChunks(houseRefs);
+  await deleteRefsInChunks(streetsSnap.docs.map((d) => d.ref));
+  await deleteDoc(canvassRef(campaignId, canvassId));
 }
 
 // ---------- Houses ----------
@@ -241,22 +296,165 @@ export async function addHouses(
   return toAdd.length;
 }
 
+export type VoterImportResult = { housesAdded: number; housesSkipped: number; streetsCreated: number };
+
+// Canvass-wide counterpart to addHouses: takes a ParsedImport (already
+// grouped by street name and sorted by house number — see
+// lib/voter-import.ts) and writes it across however many streets it
+// spans, creating any street that doesn't already exist on this canvass
+// (matched case-insensitively) rather than requiring one to be selected
+// first. Each group's own city/state (from its CSV rows) wins over the
+// canvass's when building a house's address; falls back to the canvass's
+// when a row didn't have one.
+export async function importVoterList(
+  campaignId: string,
+  canvassId: string,
+  parsed: ParsedImport,
+  existingStreets: Street[],
+  fallbackCity: string,
+  fallbackState: string
+): Promise<VoterImportResult> {
+  const existingByName = new Map(existingStreets.map((s) => [s.name.trim().toLowerCase(), s]));
+  const houseOps: WriteOp[] = [];
+  const streetOps: WriteOp[] = [];
+  let housesAdded = 0;
+  let housesSkipped = 0;
+  let streetsCreated = 0;
+
+  for (let i = 0; i < parsed.streets.length; i++) {
+    const group = parsed.streets[i];
+    const existing = existingByName.get(group.name.trim().toLowerCase());
+    const streetId = existing ? existing.id : newId(streetsCol(campaignId, canvassId));
+
+    let existingNumbers = new Set<string>();
+    if (existing) {
+      const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetId));
+      existingNumbers = new Set(housesSnap.docs.map((d) => d.data().number as string));
+    }
+
+    const seenInFile = new Set<string>();
+    let addedForStreet = 0;
+    group.houses.forEach((h) => {
+      if (existingNumbers.has(h.number) || seenInFile.has(h.number)) {
+        housesSkipped++;
+        return;
+      }
+      seenInFile.add(h.number);
+      addedForStreet++;
+      houseOps.push({
+        ref: doc(housesCol(campaignId, canvassId, streetId)),
+        data: {
+          number: h.number,
+          status: null,
+          lawnSign: false,
+          revisit: false,
+          notes: h.notes,
+          createdAt: serverTimestamp(),
+          address: buildHouseAddress(h.number, group.name, h.city || fallbackCity, h.state || fallbackState),
+          lat: null,
+          lng: null,
+        },
+      });
+    });
+
+    if (addedForStreet === 0) continue; // nothing landed here — an all-duplicates group shouldn't create an empty street
+
+    housesAdded += addedForStreet;
+    if (existing) {
+      streetOps.push({ ref: streetRef(campaignId, canvassId, streetId), data: { houseCount: increment(addedForStreet) }, merge: true });
+    } else {
+      streetsCreated++;
+      streetOps.push({
+        ref: streetRef(campaignId, canvassId, streetId),
+        data: { name: group.name, position: Date.now() + i, houseCount: increment(addedForStreet) },
+      });
+    }
+  }
+
+  if (housesAdded === 0) return { housesAdded: 0, housesSkipped, streetsCreated: 0 };
+
+  await setRefsInChunks(streetOps);
+  await setRefsInChunks(houseOps);
+  await updateDoc(canvassRef(campaignId, canvassId), {
+    streetCount: increment(streetsCreated),
+    doorCount: increment(housesAdded),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { housesAdded, housesSkipped, streetsCreated };
+}
+
 export async function updateHouse(
   campaignId: string,
   canvassId: string,
   streetId: string,
   houseId: string,
-  patch: Partial<{ number: string; status: HouseStatus | null; lawnSign: boolean; revisit: boolean; notes: string }>
+  patch: Partial<{ number: string; status: HouseStatus | null; notes: string }>
 ) {
   await updateDoc(houseRef(campaignId, canvassId, streetId, houseId), patch);
   await updateDoc(canvassRef(campaignId, canvassId), { updatedAt: serverTimestamp() });
 }
 
-export async function deleteHouse(campaignId: string, canvassId: string, streetId: string, houseId: string) {
+// Split out from updateHouse because toggling this one field also has to
+// keep the street's and canvass's revisitCount counters (used for the
+// follow-up badges in StreetNav/CanvassScreen/HomeScreen) in sync — a
+// plain patch has no way to know the previous value to compute the delta.
+export async function toggleHouseRevisit(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  revisit: boolean
+) {
+  const batch = writeBatch(db);
+  batch.update(houseRef(campaignId, canvassId, streetId, houseId), { revisit });
+  batch.update(streetRef(campaignId, canvassId, streetId), { revisitCount: increment(revisit ? 1 : -1) });
+  batch.update(canvassRef(campaignId, canvassId), {
+    revisitCount: increment(revisit ? 1 : -1),
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+// Same shape as toggleHouseRevisit, for lawnSignCount.
+export async function toggleHouseLawnSign(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  lawnSign: boolean
+) {
+  const batch = writeBatch(db);
+  batch.update(houseRef(campaignId, canvassId, streetId, houseId), { lawnSign });
+  batch.update(streetRef(campaignId, canvassId, streetId), { lawnSignCount: increment(lawnSign ? 1 : -1) });
+  batch.update(canvassRef(campaignId, canvassId), {
+    lawnSignCount: increment(lawnSign ? 1 : -1),
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+export async function deleteHouse(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  wasRevisit: boolean = false,
+  wasLawnSign: boolean = false
+) {
   const batch = writeBatch(db);
   batch.delete(houseRef(campaignId, canvassId, streetId, houseId));
-  batch.update(streetRef(campaignId, canvassId, streetId), { houseCount: increment(-1) });
-  batch.update(canvassRef(campaignId, canvassId), { doorCount: increment(-1), updatedAt: serverTimestamp() });
+  batch.update(streetRef(campaignId, canvassId, streetId), {
+    houseCount: increment(-1),
+    ...(wasRevisit ? { revisitCount: increment(-1) } : {}),
+    ...(wasLawnSign ? { lawnSignCount: increment(-1) } : {}),
+  });
+  batch.update(canvassRef(campaignId, canvassId), {
+    doorCount: increment(-1),
+    ...(wasRevisit ? { revisitCount: increment(-1) } : {}),
+    ...(wasLawnSign ? { lawnSignCount: increment(-1) } : {}),
+    updatedAt: serverTimestamp(),
+  });
   await batch.commit();
 }
 
@@ -324,6 +522,8 @@ export function subscribeCanvass(campaignId: string, canvassId: string, cb: (can
       updatedAt: data.updatedAt?.toMillis?.() ?? 0,
       streetCount: data.streetCount ?? 0,
       doorCount: data.doorCount ?? 0,
+      revisitCount: data.revisitCount ?? 0,
+      lawnSignCount: data.lawnSignCount ?? 0,
       shareable: !!data.shareable,
       shareCode: data.shareCode ?? null,
       city: data.city ?? "",

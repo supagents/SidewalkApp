@@ -2,33 +2,42 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { ArrowLeft, BarChart3, MapIcon, Share2 } from "lucide-react";
+import { ArrowLeft, BarChart3, MapIcon, Share2, Trash2, Upload } from "lucide-react";
 import {
   addHouses,
   addStreet,
+  deleteCanvass,
   deleteHouse,
   deleteStreet,
   exportCanvass,
   fetchCanvassHouses,
+  importVoterList,
   renameCanvass,
   renameStreet,
   subscribeCanvass,
   subscribeHouses,
   subscribeStreets,
+  toggleHouseLawnSign,
+  toggleHouseRevisit,
   updateCanvassLocation,
   updateHouse,
 } from "@/lib/canvass-data";
 import { downloadCanvassCSV, type ExportCategory } from "@/lib/csv";
+import type { ParsedImport } from "@/lib/voter-import";
+import { deleteMapOverlay, subscribeMapOverlays, uploadMapOverlay, type MapOverlay } from "@/lib/map-overlays";
 import type { Canvass, House, Street } from "@/lib/types";
 import { StreetNav } from "@/components/street-nav";
 import { HouseList } from "@/components/house-list";
 import { AddHouseBar } from "@/components/add-house-bar";
 import { ConfirmDeleteModal, type ConfirmDeleteTarget } from "@/components/confirm-delete-modal";
+import { ImportCSVModal } from "@/components/import-csv-modal";
+import { LoadingScreen } from "@/components/loading-screen";
 import { StatsBar } from "@/components/stats-bar";
 import { SharePanel } from "@/components/share-panel";
 import { ExportMenu } from "@/components/export-menu";
 import { Toast } from "@/components/toast";
-import { logOut } from "@/lib/auth";
+import { authErrorMessage, logOut, reauthenticate } from "@/lib/auth";
+import { useAuth } from "@/lib/auth-context";
 import { clearGuestSession } from "@/lib/share";
 
 // Leaflet needs `window` and touches the DOM directly, so it can never
@@ -54,6 +63,7 @@ export function CanvassScreen({
   onBack: () => void;
   isGuest?: boolean;
 }) {
+  const { user } = useAuth();
   const [canvass, setCanvass] = useState<Canvass | null>(null);
   const [streets, setStreets] = useState<Street[]>([]);
   const [activeStreetId, setActiveStreetId] = useState<string | null>(null);
@@ -76,6 +86,8 @@ export function CanvassScreen({
   const [mapStreetId, setMapStreetId] = useState<string | null>(null);
   const [mapHouses, setMapHouses] = useState<House[]>([]);
   const [loadingMapHouses, setLoadingMapHouses] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [overlays, setOverlays] = useState<MapOverlay[]>([]);
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -130,6 +142,15 @@ export function CanvassScreen({
     };
   }, [viewMode, mapStreetId, campaignId, canvassId]);
 
+  // Boundary layers (ward/riding/poll/etc.) are only relevant on the map,
+  // and can carry a fair amount of GeoJSON — same "only while the tab is
+  // open" gating as the map houses fetch above, so this data isn't pulled
+  // down on every canvass visit.
+  useEffect(() => {
+    if (viewMode !== "map") return;
+    return subscribeMapOverlays(campaignId, canvassId, setOverlays);
+  }, [viewMode, campaignId, canvassId]);
+
   // Only pull every street's houses (a one-time read, not a live
   // subscription) when the results panel actually needs the "whole
   // canvass" breakdown — no point keeping N listeners open otherwise.
@@ -152,11 +173,7 @@ export function CanvassScreen({
   }, [statsPanelOpen, statsScope, campaignId, canvassId]);
 
   if (!canvass) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   const activeStreet = streets.find((s) => s.id === activeStreetId) || null;
@@ -228,20 +245,59 @@ export function CanvassScreen({
     }
   };
 
-  const confirmDeleteNow = async () => {
+  const handleRevisitToggle = async (houseId: string) => {
+    if (!activeStreetId) return;
+    const h = activeHouses.find((x) => x.id === houseId);
+    if (!h) return;
+    try {
+      await toggleHouseRevisit(campaignId, canvassId, activeStreetId, houseId, !h.revisit);
+    } catch {
+      flashError("Couldn't save. Check your connection.");
+    }
+  };
+
+  const handleLawnSignToggle = async (houseId: string) => {
+    if (!activeStreetId) return;
+    const h = activeHouses.find((x) => x.id === houseId);
+    if (!h) return;
+    try {
+      await toggleHouseLawnSign(campaignId, canvassId, activeStreetId, houseId, !h.lawnSign);
+    } catch {
+      flashError("Couldn't save. Check your connection.");
+    }
+  };
+
+  const confirmDeleteNow = async (password?: string) => {
     if (!confirmDelete) return;
+
+    if (confirmDelete.type === "canvass") {
+      try {
+        await reauthenticate(password ?? "");
+      } catch (err) {
+        throw new Error(authErrorMessage(err));
+      }
+      try {
+        await deleteCanvass(campaignId, confirmDelete.id);
+      } catch {
+        throw new Error("Couldn't delete canvass. Try again.");
+      }
+      setConfirmDelete(null);
+      onBack();
+      return;
+    }
+
     try {
       if (confirmDelete.type === "street") {
         await deleteStreet(campaignId, canvassId, confirmDelete.id);
       } else if (activeStreetId) {
-        await deleteHouse(campaignId, canvassId, activeStreetId, confirmDelete.id);
+        const h = activeHouses.find((x) => x.id === confirmDelete.id);
+        await deleteHouse(campaignId, canvassId, activeStreetId, confirmDelete.id, !!h?.revisit, !!h?.lawnSign);
         if (expandedHouseId === confirmDelete.id) setExpandedHouseId(null);
       }
     } catch {
-      flashError("Couldn't delete. Try again.");
-    } finally {
-      setConfirmDelete(null);
+      throw new Error("Couldn't delete. Try again.");
     }
+    setConfirmDelete(null);
   };
 
   const handleExport = async (category: ExportCategory) => {
@@ -255,6 +311,26 @@ export function CanvassScreen({
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleImportVoterList = async (parsed: ParsedImport) => {
+    const result = await importVoterList(campaignId, canvassId, parsed, streets, canvass.city, canvass.state);
+    setImportOpen(false);
+    flashError(
+      `Imported ${result.housesAdded} house${result.housesAdded === 1 ? "" : "s"}` +
+        (result.streetsCreated > 0 ? `, created ${result.streetsCreated} street${result.streetsCreated === 1 ? "" : "s"}` : "") +
+        (result.housesSkipped > 0 ? `, skipped ${result.housesSkipped} already logged` : "") +
+        "."
+    );
+  };
+
+  const handleUploadOverlay = async (name: string, file: File) => {
+    if (!user) return;
+    await uploadMapOverlay(campaignId, canvassId, user.uid, name, file, overlays.length);
+  };
+
+  const handleDeleteOverlay = (id: string) => {
+    deleteMapOverlay(campaignId, canvassId, id).catch(() => flashError("Couldn't delete that layer."));
   };
 
   return (
@@ -297,6 +373,12 @@ export function CanvassScreen({
             {canvass.streetCount} street{canvass.streetCount === 1 ? "" : "s"} · {canvass.doorCount} door
             {canvass.doorCount === 1 ? "" : "s"}
           </div>
+          {canvass.revisitCount > 0 && (
+            <div className="flex items-center gap-1.5 mt-1 text-xs font-bold text-red-600">
+              <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" />
+              {canvass.revisitCount} flagged for follow-up
+            </div>
+          )}
           {editingLocation ? (
             <div className="flex items-center gap-1.5 mt-1">
               <input
@@ -353,6 +435,24 @@ export function CanvassScreen({
           </button>
         )}
         <ExportMenu disabled={exporting} onExport={handleExport} />
+        {!isGuest && (
+          <button
+            onClick={() => setImportOpen(true)}
+            title="Import voter list"
+            className="p-1.5 border-2 border-black rounded-lg bg-white flex-shrink-0"
+          >
+            <Upload size={18} strokeWidth={2.5} />
+          </button>
+        )}
+        {!isGuest && (
+          <button
+            onClick={() => setConfirmDelete({ type: "canvass", id: canvassId, label: canvass.name })}
+            title="Delete canvass"
+            className="p-1.5 border-2 border-black rounded-lg bg-white flex-shrink-0"
+          >
+            <Trash2 size={18} strokeWidth={2.5} />
+          </button>
+        )}
       </div>
 
       {sharePanelOpen && !isGuest && (
@@ -414,6 +514,7 @@ export function CanvassScreen({
             onAdd={handleAddStreet}
             onRename={(id, name) => renameStreet(campaignId, canvassId, id, name).catch(() => flashError("Couldn't rename street."))}
             onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
+            canDelete={!isGuest}
           />
         ) : (
           <StreetNav
@@ -423,6 +524,7 @@ export function CanvassScreen({
             onAdd={handleAddStreet}
             onRename={(id, name) => renameStreet(campaignId, canvassId, id, name).catch(() => flashError("Couldn't rename street."))}
             onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
+            canDelete={!isGuest}
             allowAll
           />
         )}
@@ -436,35 +538,37 @@ export function CanvassScreen({
                 expandedHouseId={expandedHouseId}
                 onToggleExpand={(id) => setExpandedHouseId((cur) => (cur === id ? null : id))}
                 onStatusChange={(id, status) => updateActiveHouse(id, { status })}
-                onLawnSignToggle={(id) => {
-                  const h = activeHouses.find((x) => x.id === id);
-                  if (h) updateActiveHouse(id, { lawnSign: !h.lawnSign });
-                }}
-                onRevisitToggle={(id) => {
-                  const h = activeHouses.find((x) => x.id === id);
-                  if (h) updateActiveHouse(id, { revisit: !h.revisit });
-                }}
+                onLawnSignToggle={handleLawnSignToggle}
+                onRevisitToggle={handleRevisitToggle}
                 onNumberChange={(id, number) => updateActiveHouse(id, { number })}
                 onNotesChange={(id, notes) => updateActiveHouse(id, { notes })}
                 onDelete={(id) => {
                   const h = activeHouses.find((x) => x.id === id);
                   setConfirmDelete({ type: "house", id, label: `house ${h?.number ?? ""}` });
                 }}
+                canDelete={!isGuest}
               />
             </div>
             {activeStreet && <AddHouseBar onAdd={handleAddHouses} />}
           </div>
         ) : loadingMapHouses ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
-          </div>
+          <LoadingScreen />
         ) : (
-          <MapView houses={mapHouses} />
+          <MapView
+            houses={mapHouses}
+            overlays={overlays}
+            onUploadOverlay={isGuest ? undefined : handleUploadOverlay}
+            onDeleteOverlay={isGuest ? undefined : handleDeleteOverlay}
+            canManageOverlays={!isGuest}
+          />
         )}
       </div>
 
       {confirmDelete && (
         <ConfirmDeleteModal target={confirmDelete} onCancel={() => setConfirmDelete(null)} onConfirm={confirmDeleteNow} />
+      )}
+      {importOpen && (
+        <ImportCSVModal streets={streets} onCancel={() => setImportOpen(false)} onImport={handleImportVoterList} />
       )}
       <Toast message={error} />
     </div>

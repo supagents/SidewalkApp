@@ -1,24 +1,14 @@
-"use client";
+import { connection } from "next/server";
+import { HomeClient } from "@/components/home-client";
 
-import { AuthScreen } from "@/components/auth-screen";
-import { AppShell } from "@/components/app-shell";
-import { GuestCanvassScreen } from "@/components/guest-canvass-screen";
-import { VerifyEmailScreen } from "@/components/verify-email-screen";
-import { useAuth } from "@/lib/auth-context";
-
-export default function Home() {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-sm tracking-[0.2em] text-gray-400 font-semibold">LOADING</div>
-      </div>
-    );
-  }
-
-  if (!user) return <AuthScreen />;
-  if (user.isAnonymous) return <GuestCanvassScreen />;
-  if (!user.emailVerified) return <VerifyEmailScreen />;
-  return <AppShell />;
+// Nonces (see proxy.ts) only get threaded into a page's scripts if the page
+// is rendered per-request — a statically prerendered page is built once,
+// before any request (and its CSP header/nonce) exists, so Next has nothing
+// to inject the nonce into. connection() forces this page to wait for an
+// actual incoming request, which opts it into dynamic rendering. Without
+// this, every script on the page — including Next's own framework/hydration
+// bundles — gets rejected outright by the nonce-based CSP.
+export default async function Home() {
+  await connection();
+  return <HomeClient />;
 }

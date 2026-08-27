@@ -13,11 +13,31 @@ export type House = {
   lng: number | null;
 };
 
+export type UserProfile = {
+  uid: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  birthday: string;
+  organization: string;
+  role: string;
+  createdAt: number;
+};
+
+export type Campaign = {
+  id: string;
+  name: string;
+  createdBy: string;
+  createdAt: number;
+};
+
 export type Street = {
   id: string;
   name: string;
   position: number;
   houseCount: number;
+  revisitCount: number;
+  lawnSignCount: number;
 };
 
 export type Canvass = {
@@ -28,6 +48,8 @@ export type Canvass = {
   updatedAt: number;
   streetCount: number;
   doorCount: number;
+  revisitCount: number;
+  lawnSignCount: number;
   shareable: boolean;
   shareCode: string | null;
   city: string;

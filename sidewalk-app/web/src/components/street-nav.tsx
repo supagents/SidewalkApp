@@ -1,8 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, X } from "lucide-react";
+import { Flag, Plus, Trash2, X } from "lucide-react";
 import type { Street } from "@/lib/types";
+
+function RevisitBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      title={`${count} flagged for follow-up`}
+      className="flex-shrink-0 flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-red-600 text-white"
+    >
+      <Flag size={9} strokeWidth={3} fill="white" />
+      {count}
+    </span>
+  );
+}
 
 function AddStreetChip({ onAdd }: { onAdd: (name: string) => void }) {
   const [adding, setAdding] = useState(false);
@@ -105,6 +118,7 @@ export function StreetNav({
   onRename,
   onDeleteRequest,
   allowAll = false,
+  canDelete = true,
 }: {
   streets: Street[];
   activeStreetId: string | null;
@@ -113,6 +127,7 @@ export function StreetNav({
   onRename: (id: string, name: string) => void;
   onDeleteRequest: (street: Street) => void;
   allowAll?: boolean;
+  canDelete?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -165,14 +180,17 @@ export function StreetNav({
                 >
                   {s.houseCount}
                 </span>
+                <RevisitBadge count={s.revisitCount} />
               </button>
-              <button
-                onClick={() => onDeleteRequest(s)}
-                title="Delete street"
-                className={"w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 " + (active ? "text-gray-300" : "text-gray-400")}
-              >
-                <Trash2 size={13} />
-              </button>
+              {canDelete && (
+                <button
+                  onClick={() => onDeleteRequest(s)}
+                  title="Delete street"
+                  className={"w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 " + (active ? "text-gray-300" : "text-gray-400")}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           );
         })}
@@ -219,22 +237,27 @@ export function StreetNav({
                   className="flex-1 min-w-0 text-left px-2.5 py-2.5 font-bold text-sm flex items-center justify-between gap-2"
                 >
                   <span className="truncate">{s.name}</span>
-                  <span
-                    className={
-                      "text-xs font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 " +
-                      (active ? "bg-white text-black" : "bg-gray-100 text-gray-500")
-                    }
-                  >
-                    {s.houseCount}
+                  <span className="flex items-center gap-1 flex-shrink-0">
+                    <span
+                      className={
+                        "text-xs font-semibold px-1.5 py-0.5 rounded-full " +
+                        (active ? "bg-white text-black" : "bg-gray-100 text-gray-500")
+                      }
+                    >
+                      {s.houseCount}
+                    </span>
+                    <RevisitBadge count={s.revisitCount} />
                   </span>
                 </button>
-                <button
-                  onClick={() => onDeleteRequest(s)}
-                  title="Delete street"
-                  className={"w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mr-1 " + (active ? "text-gray-300" : "text-gray-400")}
-                >
-                  <Trash2 size={14} />
-                </button>
+                {canDelete && (
+                  <button
+                    onClick={() => onDeleteRequest(s)}
+                    title="Delete street"
+                    className={"w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mr-1 " + (active ? "text-gray-300" : "text-gray-400")}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             );
           })}

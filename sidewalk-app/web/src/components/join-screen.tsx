@@ -35,7 +35,9 @@ export function JoinScreen({ onBack }: { onBack: () => void }) {
           ? "That code doesn't match an active canvass."
           : err instanceof FirebaseError && err.code === "functions/failed-precondition"
             ? "That canvass isn't shared anymore."
-            : "Couldn't join. Check the code and try again.";
+            : err instanceof FirebaseError && err.code === "functions/resource-exhausted"
+              ? "Too many attempts. Wait a few minutes and try again."
+              : "Couldn't join. Check the code and try again.";
       flashError(message);
     } finally {
       setBusy(false);
