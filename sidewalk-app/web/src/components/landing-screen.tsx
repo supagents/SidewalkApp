@@ -57,6 +57,8 @@ export function LandingScreen({
             Privacy Policy
           </Link>
         </div>
+
+        <div className="text-[11px] text-gray-300 mt-3">Copyright © 2026 Sidewalk Strategy - All Rights Reserved</div>
       </div>
     </div>
   );
