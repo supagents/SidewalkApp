@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 // Every page under /campaigns is a real, refresh-safe route (see the
 // per-route page.tsx files) rather than component state, so each one
 // needs to independently re-check auth on load — a direct visit or a
-// refresh lands here before AuthProvider's onAuthStateChanged has
+// refresh lands here before AuthProvider's onIdTokenChanged has
 // necessarily resolved. Anonymous/unverified users belong at "/"
 // (GuestCanvassScreen / VerifyEmailScreen live there), not here.
 export function useAuthGate(): { status: "loading" } | { status: "ready"; user: User } {
