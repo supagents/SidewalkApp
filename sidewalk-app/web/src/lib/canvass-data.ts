@@ -125,8 +125,33 @@ export async function renameCanvass(campaignId: string, canvassId: string, name:
   await updateDoc(canvassRef(campaignId, canvassId), { name, updatedAt: serverTimestamp() });
 }
 
+// A house's address (see buildHouseAddress) is built once at creation
+// time from its street name plus whatever city/state the canvass had
+// right then — it doesn't dynamically track this field afterward.
+// Without rebuilding every existing house's address and clearing its
+// lat/lng here, correcting a wrong or missing city leaves each
+// already-added house pinned wherever its stale address happened to
+// geocode to: geocodeHouseOnWrite's guard (only geocode when lat isn't
+// already set) permanently skips a house once it has *any* coordinates,
+// right or wrong, and there'd otherwise be no way to make it try again.
 export async function updateCanvassLocation(campaignId: string, canvassId: string, city: string, state: string) {
   await updateDoc(canvassRef(campaignId, canvassId), { city, state, updatedAt: serverTimestamp() });
+
+  const streetsSnap = await getDocs(streetsCol(campaignId, canvassId));
+  const houseOps: WriteOp[] = [];
+  for (const streetDoc of streetsSnap.docs) {
+    const streetName = streetDoc.data().name as string;
+    const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetDoc.id));
+    housesSnap.docs.forEach((houseDoc) => {
+      const number = houseDoc.data().number as string;
+      houseOps.push({
+        ref: houseDoc.ref,
+        data: { address: buildHouseAddress(number, streetName, city, state), lat: null, lng: null },
+        merge: true,
+      });
+    });
+  }
+  await setRefsInChunks(houseOps);
 }
 
 // ---------- Streets ----------
