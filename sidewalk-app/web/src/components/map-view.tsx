@@ -204,39 +204,39 @@ function condoPopupContent(street: Street, units: House[]): HTMLDivElement {
   }
 
   const list = document.createElement("div");
-  list.style.maxHeight = "170px";
-  list.style.overflowY = "auto";
   list.style.display = "flex";
   list.style.flexDirection = "column";
   list.style.gap = "4px";
 
-  units
-    .slice()
-    .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }))
-    .forEach((u) => {
-      const row = document.createElement("div");
-      row.style.display = "flex";
-      row.style.alignItems = "center";
-      row.style.gap = "6px";
-      row.style.fontSize = "12px";
+  // One row per status category present, not one row per unit — a
+  // building can have dozens of units, and "how many supporters here"
+  // is the useful question, not a scroll through every individual one
+  // (that detail is still what the LIST tab is for).
+  FILTER_KEYS.forEach((key) => {
+    const count = units.filter((u) => (u.status ?? UNLOGGED) === key).length;
+    if (count === 0) return;
 
-      const dot = document.createElement("span");
-      dot.style.width = "8px";
-      dot.style.height = "8px";
-      dot.style.borderRadius = "50%";
-      dot.style.flexShrink = "0";
-      dot.style.background = u.status ? STATUS_COLORS[u.status] : NO_STATUS_COLOR;
-      dot.style.border = "1px solid #000";
-      row.appendChild(dot);
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = "6px";
+    row.style.fontSize = "12px";
 
-      const label = document.createElement("span");
-      const floorPart = u.floor ? ` · Fl ${u.floor}` : "";
-      const statusPart = u.status ? ` — ${STATUS_LABEL[u.status]}` : "";
-      label.textContent = `Unit ${u.number}${floorPart}${statusPart}`;
-      row.appendChild(label);
+    const dot = document.createElement("span");
+    dot.style.width = "8px";
+    dot.style.height = "8px";
+    dot.style.borderRadius = "50%";
+    dot.style.flexShrink = "0";
+    dot.style.background = filterColor(key);
+    dot.style.border = "1px solid #000";
+    row.appendChild(dot);
 
-      list.appendChild(row);
-    });
+    const label = document.createElement("span");
+    label.textContent = `${filterLabel(key)} — ${count}`;
+    row.appendChild(label);
+
+    list.appendChild(row);
+  });
 
   container.appendChild(list);
   return container;
