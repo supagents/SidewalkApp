@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, type User } from "firebase/auth";
+import { onIdTokenChanged, type User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 type AuthContextValue = {
@@ -15,8 +15,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // onIdTokenChanged (not onAuthStateChanged) — it fires on sign-in/out
+  // just like onAuthStateChanged, but ALSO whenever the current session's
+  // auth token is refreshed, including an explicit forced refresh (see
+  // verify-email-screen.tsx). That matters because the properties on
+  // `user` here (like emailVerified) only ever update in this context via
+  // a fresh callback firing — onAuthStateChanged wouldn't refire just
+  // because some other code mutated auth.currentUser in place.
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
+    return onIdTokenChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
     });
