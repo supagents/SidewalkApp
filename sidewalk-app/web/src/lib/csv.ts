@@ -39,12 +39,13 @@ function filterByCategory(canvass: CanvassExport, filter: (house: House) => bool
 }
 
 function toCSV(canvass: CanvassExport): string {
-  const rows: string[][] = [["Street", "House Number", "Status", "Lawn Sign", "Follow-up", "Notes"]];
+  const rows: string[][] = [["Street", "House/Unit Number", "Floor", "Status", "Lawn Sign", "Follow-up", "Notes"]];
   canvass.streets.forEach((s) => {
     s.houses.forEach((h) => {
       rows.push([
         s.name,
         h.number,
+        h.floor || "",
         h.status ? STATUS_LABEL[h.status] : "",
         h.lawnSign ? "Yes" : "No",
         h.revisit ? "Yes" : "No",
@@ -56,7 +57,7 @@ function toCSV(canvass: CanvassExport): string {
 }
 
 function toCSVAll(canvasses: CanvassExport[]): string {
-  const rows: string[][] = [["Canvass", "Street", "House Number", "Status", "Lawn Sign", "Follow-up", "Notes"]];
+  const rows: string[][] = [["Canvass", "Street", "House/Unit Number", "Floor", "Status", "Lawn Sign", "Follow-up", "Notes"]];
   canvasses.forEach((c) => {
     c.streets.forEach((s) => {
       s.houses.forEach((h) => {
@@ -64,6 +65,7 @@ function toCSVAll(canvasses: CanvassExport[]): string {
           c.name,
           s.name,
           h.number,
+          h.floor || "",
           h.status ? STATUS_LABEL[h.status] : "",
           h.lawnSign ? "Yes" : "No",
           h.revisit ? "Yes" : "No",

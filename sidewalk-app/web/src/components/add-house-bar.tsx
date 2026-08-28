@@ -4,7 +4,8 @@ import { useRef, useState } from "react";
 import { ListPlus, Upload } from "lucide-react";
 import { ChunkyBox } from "@/components/chunky-box";
 
-export function AddHouseBar({ onAdd }: { onAdd: (raw: string) => void }) {
+export function AddHouseBar({ onAdd, isCondo = false }: { onAdd: (raw: string) => void; isCondo?: boolean }) {
+  const noun = isCondo ? "unit" : "house";
   const [value, setValue] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
@@ -42,7 +43,7 @@ export function AddHouseBar({ onAdd }: { onAdd: (raw: string) => void }) {
     <div className="sticky bottom-0 bg-white border-t-2 border-black px-3 pt-2.5 pb-3">
       {bulkOpen && (
         <div className="mb-2.5 border-2 border-black rounded-xl p-3 bg-white">
-          <div className="text-xs font-bold mb-1.5">Import house numbers</div>
+          <div className="text-xs font-bold mb-1.5">Import {noun} numbers</div>
 
           <input
             ref={fileInputRef}
@@ -63,7 +64,7 @@ export function AddHouseBar({ onAdd }: { onAdd: (raw: string) => void }) {
           <textarea
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
-            placeholder={"142\n144\n146  — or  142, 144, 146"}
+            placeholder={isCondo ? "502\n503\n504  — or  502, 503, 504" : "142\n144\n146  — or  142, 144, 146"}
             rows={3}
             className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-black resize-none mb-2.5"
           />
@@ -90,9 +91,9 @@ export function AddHouseBar({ onAdd }: { onAdd: (raw: string) => void }) {
             </button>
           </div>
           <div className="text-xs text-gray-400 mt-2 leading-relaxed">
-            Works with a plain list of house numbers only, one per line or comma-separated — all added
-            to this street. For a full voter file with names, phone, email, or multiple streets, use
-            &quot;Import voter list&quot; up in the canvass header instead.
+            Works with a plain list of {noun} numbers only, one per line or comma-separated — all added
+            to this {isCondo ? "condo" : "street"}. For a full voter file with names, phone, email, or
+            multiple streets, use &quot;Import voter list&quot; up in the canvass header instead.
           </div>
         </div>
       )}
@@ -103,7 +104,7 @@ export function AddHouseBar({ onAdd }: { onAdd: (raw: string) => void }) {
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit(value)}
           onPaste={handlePaste}
-          placeholder="House number"
+          placeholder={isCondo ? "Unit number" : "House number"}
           className="flex-1 border-2 border-black rounded-xl px-3.5 py-3 text-base outline-none focus:ring-2 focus:ring-black focus:ring-offset-1"
         />
         <button

@@ -14,6 +14,7 @@ export function HouseList({
   onLawnSignToggle,
   onRevisitToggle,
   onNumberChange,
+  onFloorChange,
   onNotesChange,
   onDelete,
   canDelete = true,
@@ -26,6 +27,7 @@ export function HouseList({
   onLawnSignToggle: (houseId: string) => void;
   onRevisitToggle: (houseId: string) => void;
   onNumberChange: (houseId: string, number: string) => void;
+  onFloorChange: (houseId: string, floor: string) => void;
   onNotesChange: (houseId: string, notes: string) => void;
   onDelete: (houseId: string) => void;
   canDelete?: boolean;
@@ -35,16 +37,17 @@ export function HouseList({
   if (!street) {
     return (
       <div className="text-sm text-gray-400 text-center mt-10 px-6 leading-relaxed">
-        Add a street to start logging houses.
+        Add a street or condo to start logging houses.
       </div>
     );
   }
+  const isCondo = street.type === "condo";
   if (houses.length === 0) {
     return (
       <div className="text-sm text-gray-400 text-center mt-10 px-6 leading-relaxed">
-        No houses on {street.name} yet.
+        No {isCondo ? "units" : "houses"} on {street.name} yet.
         <br />
-        Add a house number below.
+        Add a {isCondo ? "unit" : "house"} number below.
       </div>
     );
   }
@@ -79,9 +82,11 @@ export function HouseList({
             onLawnSignToggle={() => onLawnSignToggle(h.id)}
             onRevisitToggle={() => onRevisitToggle(h.id)}
             onNumberChange={(number) => onNumberChange(h.id, number)}
+            onFloorChange={(floor) => onFloorChange(h.id, floor)}
             onNotesChange={(notes) => onNotesChange(h.id, notes)}
             onDelete={() => onDelete(h.id)}
             canDelete={canDelete}
+            isCondo={isCondo}
           />
         ))}
       </div>

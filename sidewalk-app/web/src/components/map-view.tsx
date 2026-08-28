@@ -10,7 +10,7 @@ import { Layers, Plus, Trash2 } from "lucide-react";
 import { STATUS_COLORS, STATUS_LABEL, STATUS_ORDER } from "@/components/status-icons";
 import { UploadOverlayModal } from "@/components/upload-overlay-modal";
 import type { MapOverlay } from "@/lib/map-overlays";
-import type { House, HouseStatus } from "@/lib/types";
+import type { House, HouseStatus, Street } from "@/lib/types";
 
 const NO_STATUS_COLOR = "#D1D5DB"; // matches the pale gray "unlogged" face outline elsewhere in the app
 const UNLOGGED = "unlogged";
@@ -155,14 +155,103 @@ function clusterIcon(cluster: L.MarkerCluster) {
   });
 }
 
+// A condo is one building with many units at the exact same coordinates —
+// square (not round, unlike pinIcon/clusterIcon) so it reads as a
+// distinct kind of marker at a glance, not just another status pin or a
+// cluster of them. The count badge is the number of *visible* (post
+// status-filter) units, matching what the popup list below it shows.
+function condoIcon(unitCount: number) {
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="position:relative;width:28px;height:28px;">
+        <div style="width:28px;height:28px;border-radius:8px;background:#000;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>
+            <path d="M9 9h.01M9 13h.01M15 9h.01M15 13h.01"/>
+          </svg>
+        </div>
+        <div style="position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#DC2626;color:#fff;font-weight:800;font-size:10px;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;">${unitCount}</div>
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
+// Same "build a real DOM node, use textContent" safety rule as
+// popupContent above — a condo's name, address, and every unit's number
+// are all user-editable text.
+function condoPopupContent(street: Street, units: House[]): HTMLDivElement {
+  const container = document.createElement("div");
+  container.style.fontFamily = "'Helvetica Neue',Helvetica,Arial,sans-serif";
+  container.style.minWidth = "170px";
+  container.style.maxWidth = "230px";
+
+  const title = document.createElement("div");
+  title.style.fontWeight = "800";
+  title.style.marginBottom = "3px";
+  title.textContent = street.name;
+  container.appendChild(title);
+
+  if (street.address) {
+    const addr = document.createElement("div");
+    addr.style.fontSize = "11px";
+    addr.style.color = "#6B7280";
+    addr.style.marginBottom = "6px";
+    addr.textContent = street.address;
+    container.appendChild(addr);
+  }
+
+  const list = document.createElement("div");
+  list.style.maxHeight = "170px";
+  list.style.overflowY = "auto";
+  list.style.display = "flex";
+  list.style.flexDirection = "column";
+  list.style.gap = "4px";
+
+  units
+    .slice()
+    .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }))
+    .forEach((u) => {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.gap = "6px";
+      row.style.fontSize = "12px";
+
+      const dot = document.createElement("span");
+      dot.style.width = "8px";
+      dot.style.height = "8px";
+      dot.style.borderRadius = "50%";
+      dot.style.flexShrink = "0";
+      dot.style.background = u.status ? STATUS_COLORS[u.status] : NO_STATUS_COLOR;
+      dot.style.border = "1px solid #000";
+      row.appendChild(dot);
+
+      const label = document.createElement("span");
+      const floorPart = u.floor ? ` · Fl ${u.floor}` : "";
+      const statusPart = u.status ? ` — ${STATUS_LABEL[u.status]}` : "";
+      label.textContent = `Unit ${u.number}${floorPart}${statusPart}`;
+      row.appendChild(label);
+
+      list.appendChild(row);
+    });
+
+  container.appendChild(list);
+  return container;
+}
+
 export function MapView({
   houses,
+  streets = [],
   overlays = [],
   onUploadOverlay,
   onDeleteOverlay,
   canManageOverlays = false,
 }: {
   houses: House[];
+  streets?: Street[];
   overlays?: MapOverlay[];
   onUploadOverlay?: (name: string, file: File) => Promise<void>;
   onDeleteOverlay?: (id: string) => void;
@@ -259,19 +348,51 @@ export function MapView({
 
     clusterGroup.clearLayers();
     const pinned = houses.filter((h) => h.lat != null && h.lng != null && !hidden.has(h.status ?? UNLOGGED));
-    const markers = pinned.map((h) => {
+
+    // Every unit in a condo shares its building's exact coordinates, so
+    // one pin per unit would just stack invisibly on top of each other —
+    // group them by street instead and render one distinct marker for
+    // the whole building, same idea as clusterGroup but deliberate
+    // (by condo, not by map proximity) and always collapsed regardless
+    // of zoom level.
+    const streetById = new Map(streets.map((s) => [s.id, s]));
+    const condoUnitsByStreetId = new Map<string, House[]>();
+    const regular: House[] = [];
+    pinned.forEach((h) => {
+      const street = streetById.get(h.streetId);
+      if (street?.type === "condo") {
+        const list = condoUnitsByStreetId.get(h.streetId) ?? [];
+        list.push(h);
+        condoUnitsByStreetId.set(h.streetId, list);
+      } else {
+        regular.push(h);
+      }
+    });
+
+    const markers: L.Marker[] = regular.map((h) => {
       const color = h.status ? STATUS_COLORS[h.status] : NO_STATUS_COLOR;
       return L.marker([h.lat as number, h.lng as number], { icon: pinIcon(color) }).bindPopup(
         popupContent(h.address || h.number)
       );
     });
+    condoUnitsByStreetId.forEach((units, streetId) => {
+      const street = streetById.get(streetId);
+      if (!street) return; // street data hasn't loaded yet — skip rather than guess at how to render it
+      const first = units[0];
+      markers.push(
+        L.marker([first.lat as number, first.lng as number], { icon: condoIcon(units.length) }).bindPopup(
+          condoPopupContent(street, units)
+        )
+      );
+    });
+
     clusterGroup.addLayers(markers);
 
     if (markers.length > 0) {
       const bounds = L.featureGroup(markers).getBounds();
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
     }
-  }, [houses, hidden]);
+  }, [houses, hidden, streets]);
 
   const allPinned = houses.filter((h) => h.lat != null && h.lng != null);
   const visiblePinned = allPinned.filter((h) => !hidden.has(h.status ?? UNLOGGED));
