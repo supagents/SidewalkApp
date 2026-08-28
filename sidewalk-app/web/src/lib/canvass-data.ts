@@ -14,7 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { Canvass, CanvassExport, House, HouseStatus, Street } from "@/lib/types";
+import type { Canvass, CanvassExport, House, HouseStatus, Street, StreetType } from "@/lib/types";
 import type { ParsedImport } from "@/lib/voter-import";
 
 // Firestore caps a batch at 500 writes; this leaves headroom for a canvass
@@ -140,13 +140,14 @@ export async function updateCanvassLocation(campaignId: string, canvassId: strin
   const streetsSnap = await getDocs(streetsCol(campaignId, canvassId));
   const houseOps: WriteOp[] = [];
   for (const streetDoc of streetsSnap.docs) {
-    const streetName = streetDoc.data().name as string;
+    const streetData = streetDoc.data();
+    const street = { type: (streetData.type as StreetType) ?? "street", name: streetData.name as string, address: streetData.address as string | undefined };
     const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetDoc.id));
     housesSnap.docs.forEach((houseDoc) => {
       const number = houseDoc.data().number as string;
       houseOps.push({
         ref: houseDoc.ref,
-        data: { address: buildHouseAddress(number, streetName, city, state), lat: null, lng: null },
+        data: { address: houseAddressFor(street, number, city, state), lat: null, lng: null },
         merge: true,
       });
     });
@@ -165,6 +166,8 @@ export function subscribeStreets(campaignId: string, canvassId: string, cb: (str
         return {
           id: d.id,
           name: data.name,
+          type: (data.type as StreetType) ?? "street",
+          address: data.address ?? undefined,
           position: data.position ?? 0,
           houseCount: data.houseCount ?? 0,
           revisitCount: data.revisitCount ?? 0,
@@ -175,11 +178,19 @@ export function subscribeStreets(campaignId: string, canvassId: string, cb: (str
   });
 }
 
-export async function addStreet(campaignId: string, canvassId: string, name: string) {
+export async function addStreet(
+  campaignId: string,
+  canvassId: string,
+  name: string,
+  type: StreetType = "street",
+  address?: string
+) {
   const id = newId(streetsCol(campaignId, canvassId));
   const batch = writeBatch(db);
   batch.set(streetRef(campaignId, canvassId, id), {
     name,
+    type,
+    ...(type === "condo" ? { address: address ?? "" } : {}),
     position: Date.now(),
     houseCount: 0,
     revisitCount: 0,
@@ -244,7 +255,9 @@ export function subscribeHouses(
         const data = d.data();
         return {
           id: d.id,
+          streetId,
           number: data.number,
+          floor: data.floor ?? "",
           status: data.status ?? null,
           lawnSign: !!data.lawnSign,
           revisit: !!data.revisit,
@@ -263,24 +276,42 @@ export function buildHouseAddress(number: string, streetName: string, city: stri
   return [`${number} ${streetName}`, city, state].filter(Boolean).join(", ");
 }
 
+// Every unit in a condo shares one physical building, unlike a street
+// where each house number is its own address — so a unit's geocode
+// target is the condo's own street address (never the unit number),
+// combined with the canvass's city/state the same way a regular
+// street's name is.
+export function buildCondoUnitAddress(condoAddress: string, city: string, state: string): string {
+  return [condoAddress, city, state].filter(Boolean).join(", ");
+}
+
+function houseAddressFor(street: Pick<Street, "type" | "name" | "address">, number: string, city: string, state: string): string {
+  return street.type === "condo"
+    ? buildCondoUnitAddress(street.address ?? "", city, state)
+    : buildHouseAddress(number, street.name, city, state);
+}
+
 // Accepts one number or many, comma/whitespace-separated (or one per
-// line, e.g. from a pasted spreadsheet column). Skips numbers already
-// logged on this street. Returns how many were actually added.
+// line, e.g. from a pasted spreadsheet column) — for a condo, these are
+// unit numbers rather than house numbers, entered the same way; floor is
+// filled in afterward per-unit (see HouseRow), same as notes. Skips
+// numbers already logged on this street. Returns how many were actually
+// added.
 //
 // Each house's address is built here from parts already known to the
-// app (street name + the canvass's city/state) instead of asking the
-// volunteer to type a full address — lat/lng start unset and get
-// filled in asynchronously by the geocodeHouseOnCreate Cloud Function.
+// app (see houseAddressFor) instead of asking the volunteer to type a
+// full address — lat/lng start unset and get filled in asynchronously by
+// the geocodeHouseOnWrite Cloud Function.
 export async function addHouses(
   campaignId: string,
   canvassId: string,
-  streetId: string,
+  street: Street,
   raw: string,
   existingNumbers: Set<string>,
-  streetName: string,
   city: string,
   state: string
 ): Promise<number> {
+  const streetId = street.id;
   const tokens = raw
     .split(/[\s,]+/)
     .map((t) => t.trim())
@@ -302,12 +333,13 @@ export async function addHouses(
   toAdd.forEach((number) => {
     batch.set(doc(col), {
       number,
+      floor: "",
       status: null,
       lawnSign: false,
       revisit: false,
       notes: "",
       createdAt: serverTimestamp(),
-      address: buildHouseAddress(number, streetName, city, state),
+      address: houseAddressFor(street, number, city, state),
       lat: null,
       lng: null,
     });
@@ -370,6 +402,7 @@ export async function importVoterList(
         ref: doc(housesCol(campaignId, canvassId, streetId)),
         data: {
           number: h.number,
+          floor: "",
           status: null,
           lawnSign: false,
           revisit: false,
@@ -414,7 +447,7 @@ export async function updateHouse(
   canvassId: string,
   streetId: string,
   houseId: string,
-  patch: Partial<{ number: string; status: HouseStatus | null; notes: string }>
+  patch: Partial<{ number: string; floor: string; status: HouseStatus | null; notes: string }>
 ) {
   await updateDoc(houseRef(campaignId, canvassId, streetId, houseId), patch);
   await updateDoc(canvassRef(campaignId, canvassId), { updatedAt: serverTimestamp() });
@@ -496,7 +529,9 @@ async function fetchCanvassExport(campaignId: string, canvassId: string, name: s
         const data = d.data();
         return {
           id: d.id,
+          streetId: streetDoc.id,
           number: data.number,
+          floor: data.floor ?? "",
           status: data.status ?? null,
           lawnSign: !!data.lawnSign,
           revisit: !!data.revisit,

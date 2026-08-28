@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Flag, Plus, Trash2, X } from "lucide-react";
-import type { Street } from "@/lib/types";
+import { Building2, Flag, Plus, Trash2, X } from "lucide-react";
+import type { Street, StreetType } from "@/lib/types";
 
 function RevisitBadge({ count }: { count: number }) {
   if (count <= 0) return null;
@@ -17,9 +17,44 @@ function RevisitBadge({ count }: { count: number }) {
   );
 }
 
-function AddStreetChip({ onAdd }: { onAdd: (name: string) => void }) {
+// Shared by both add-forms below — a condo is stored the same way a
+// street is (see canvass-data.ts's addStreet), just with a `type` and,
+// for a condo, the building's own address, so this is the only real
+// branch point in either form.
+function TypeToggle({ type, onChange }: { type: StreetType; onChange: (t: StreetType) => void }) {
+  return (
+    <div className="flex-shrink-0 flex border border-black rounded-full overflow-hidden text-[10px] font-bold">
+      <button
+        type="button"
+        onClick={() => onChange("street")}
+        className={"px-2.5 py-1 " + (type === "street" ? "bg-black text-white" : "bg-white text-gray-500")}
+      >
+        STREET
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("condo")}
+        className={"px-2.5 py-1 border-l border-black " + (type === "condo" ? "bg-black text-white" : "bg-white text-gray-500")}
+      >
+        CONDO
+      </button>
+    </div>
+  );
+}
+
+function CondoBadge() {
+  return (
+    <span title="Condo" className="flex-shrink-0">
+      <Building2 size={12} strokeWidth={2.5} />
+    </span>
+  );
+}
+
+function AddStreetChip({ onAdd }: { onAdd: (name: string, type: StreetType, address?: string) => void }) {
   const [adding, setAdding] = useState(false);
+  const [type, setType] = useState<StreetType>("street");
   const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
 
   if (!adding) {
     return (
@@ -31,43 +66,56 @@ function AddStreetChip({ onAdd }: { onAdd: (name: string) => void }) {
       </button>
     );
   }
-  const submit = () => {
-    if (name.trim()) onAdd(name.trim());
-    setName("");
+  const ready = type === "street" ? !!name.trim() : !!name.trim() && !!address.trim();
+  const reset = () => {
     setAdding(false);
+    setType("street");
+    setName("");
+    setAddress("");
+  };
+  const submit = () => {
+    if (!ready) return;
+    onAdd(name.trim(), type, type === "condo" ? address.trim() : undefined);
+    reset();
   };
   return (
-    <div className="flex-shrink-0 flex items-center gap-1 border-2 border-black rounded-full pl-3 pr-1.5 py-1 bg-white">
-      <input
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submit();
-          if (e.key === "Escape") {
-            setAdding(false);
-            setName("");
-          }
-        }}
-        placeholder="Street name"
-        className="outline-none text-sm w-28 bg-transparent"
-      />
-      <button
-        onClick={submit}
-        disabled={!name.trim()}
-        className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center disabled:opacity-30"
-      >
-        <Plus size={14} strokeWidth={3} />
-      </button>
-      <button
-        onClick={() => {
-          setAdding(false);
-          setName("");
-        }}
-        className="w-6 h-6 rounded-full text-gray-400 flex items-center justify-center"
-      >
-        <X size={14} />
-      </button>
+    <div className="flex-shrink-0 flex flex-col gap-1.5 border-2 border-black rounded-2xl p-2 bg-white">
+      <TypeToggle type={type} onChange={setType} />
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && type === "street") submit();
+            if (e.key === "Escape") reset();
+          }}
+          placeholder={type === "condo" ? "Condo name" : "Street name"}
+          className="outline-none text-sm w-28 bg-transparent"
+        />
+        <button
+          onClick={submit}
+          disabled={!ready}
+          className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center disabled:opacity-30 flex-shrink-0"
+        >
+          <Plus size={14} strokeWidth={3} />
+        </button>
+        <button onClick={reset} className="w-6 h-6 rounded-full text-gray-400 flex items-center justify-center flex-shrink-0">
+          <X size={14} />
+        </button>
+      </div>
+      {type === "condo" && (
+        <input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && ready) submit();
+            if (e.key === "Escape") reset();
+          }}
+          placeholder="Building address"
+          className="outline-none text-sm w-full bg-transparent border-t border-gray-200 pt-1.5"
+        />
+      )}
     </div>
   );
 }
@@ -123,7 +171,7 @@ export function StreetNav({
   streets: Street[];
   activeStreetId: string | null;
   onSelect: (id: string | null) => void;
-  onAdd: (name: string) => void;
+  onAdd: (name: string, type: StreetType, address?: string) => void;
   onRename: (id: string, name: string) => void;
   onDeleteRequest: (street: Street) => void;
   allowAll?: boolean;
@@ -171,6 +219,7 @@ export function StreetNav({
                 onClick={() => (active ? setEditingId(s.id) : onSelect(s.id))}
                 className="flex items-center gap-1.5 text-sm font-bold"
               >
+                {s.type === "condo" && <CondoBadge />}
                 {s.name}
                 <span
                   className={
@@ -236,7 +285,10 @@ export function StreetNav({
                   onClick={() => (active ? setEditingId(s.id) : onSelect(s.id))}
                   className="flex-1 min-w-0 text-left px-2.5 py-2.5 font-bold text-sm flex items-center justify-between gap-2"
                 >
-                  <span className="truncate">{s.name}</span>
+                  <span className="truncate flex items-center gap-1.5">
+                    {s.type === "condo" && <CondoBadge />}
+                    {s.name}
+                  </span>
                   <span className="flex items-center gap-1 flex-shrink-0">
                     <span
                       className={
@@ -268,9 +320,11 @@ export function StreetNav({
   );
 }
 
-function AddStreetRow({ onAdd }: { onAdd: (name: string) => void }) {
+function AddStreetRow({ onAdd }: { onAdd: (name: string, type: StreetType, address?: string) => void }) {
   const [adding, setAdding] = useState(false);
+  const [type, setType] = useState<StreetType>("street");
   const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
 
   if (!adding) {
     return (
@@ -278,47 +332,60 @@ function AddStreetRow({ onAdd }: { onAdd: (name: string) => void }) {
         onClick={() => setAdding(true)}
         className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg border-2 border-dashed border-gray-400 text-gray-400 text-sm font-bold"
       >
-        <Plus size={16} /> Add street
+        <Plus size={16} /> Add street or condo
       </button>
     );
   }
-  const submit = () => {
-    if (name.trim()) onAdd(name.trim());
-    setName("");
+  const ready = type === "street" ? !!name.trim() : !!name.trim() && !!address.trim();
+  const reset = () => {
     setAdding(false);
+    setType("street");
+    setName("");
+    setAddress("");
+  };
+  const submit = () => {
+    if (!ready) return;
+    onAdd(name.trim(), type, type === "condo" ? address.trim() : undefined);
+    reset();
   };
   return (
-    <div className="flex items-center gap-1 border-2 border-black rounded-lg pl-3 pr-1.5 py-1.5 bg-white">
+    <div className="flex flex-col gap-1.5 border-2 border-black rounded-lg p-2 bg-white">
+      <TypeToggle type={type} onChange={setType} />
       <input
         autoFocus
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") submit();
-          if (e.key === "Escape") {
-            setAdding(false);
-            setName("");
-          }
+          if (e.key === "Enter" && type === "street") submit();
+          if (e.key === "Escape") reset();
         }}
-        placeholder="Street name"
-        className="outline-none text-sm flex-1 min-w-0 bg-transparent"
+        placeholder={type === "condo" ? "Condo name" : "Street name"}
+        className="outline-none text-sm bg-transparent border border-gray-200 rounded-lg px-2.5 py-1.5"
       />
-      <button
-        onClick={submit}
-        disabled={!name.trim()}
-        className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center disabled:opacity-30 flex-shrink-0"
-      >
-        <Plus size={14} strokeWidth={3} />
-      </button>
-      <button
-        onClick={() => {
-          setAdding(false);
-          setName("");
-        }}
-        className="w-6 h-6 rounded-full text-gray-400 flex items-center justify-center flex-shrink-0"
-      >
-        <X size={14} />
-      </button>
+      {type === "condo" && (
+        <input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && ready) submit();
+            if (e.key === "Escape") reset();
+          }}
+          placeholder="Building address"
+          className="outline-none text-sm bg-transparent border border-gray-200 rounded-lg px-2.5 py-1.5"
+        />
+      )}
+      <div className="flex gap-1.5">
+        <button
+          onClick={submit}
+          disabled={!ready}
+          className="flex-1 bg-black text-white rounded-lg py-1.5 font-bold text-xs disabled:opacity-30"
+        >
+          ADD
+        </button>
+        <button onClick={reset} className="px-3 border-2 border-black rounded-lg text-xs font-bold">
+          CANCEL
+        </button>
+      </div>
     </div>
   );
 }

@@ -13,9 +13,11 @@ export function HouseRow({
   onLawnSignToggle,
   onRevisitToggle,
   onNumberChange,
+  onFloorChange,
   onNotesChange,
   onDelete,
   canDelete = true,
+  isCondo = false,
 }: {
   house: House;
   expanded: boolean;
@@ -24,13 +26,16 @@ export function HouseRow({
   onLawnSignToggle: () => void;
   onRevisitToggle: () => void;
   onNumberChange: (number: string) => void;
+  onFloorChange: (floor: string) => void;
   onNotesChange: (notes: string) => void;
   onDelete: () => void;
   canDelete?: boolean;
+  isCondo?: boolean;
 }) {
   const [editingNumber, setEditingNumber] = useState(false);
   const [numberDraft, setNumberDraft] = useState(house.number);
   const [noteDraft, setNoteDraft] = useState(house.notes);
+  const [floorDraft, setFloorDraft] = useState(house.floor);
 
   const commitNumber = () => {
     setEditingNumber(false);
@@ -56,7 +61,7 @@ export function HouseRow({
               }
             }}
             onBlur={commitNumber}
-            inputMode="numeric"
+            inputMode={isCondo ? "text" : "numeric"}
             className="w-9 h-9 flex-shrink-0 bg-gray-100 rounded-lg text-center font-extrabold text-sm outline-none border-2 border-black"
           />
         ) : (
@@ -65,6 +70,7 @@ export function HouseRow({
               setNumberDraft(house.number);
               setEditingNumber(true);
             }}
+            title={isCondo ? "Unit number" : "House number"}
             className="w-9 h-9 flex-shrink-0 bg-gray-100 rounded-lg flex items-center justify-center font-extrabold text-sm"
           >
             {house.number}
@@ -111,6 +117,16 @@ export function HouseRow({
 
       {expanded && (
         <div className="px-3 pb-3 pt-0.5 border-t border-gray-100">
+          {isCondo && (
+            <input
+              value={floorDraft}
+              onChange={(e) => setFloorDraft(e.target.value)}
+              onBlur={() => onFloorChange(floorDraft)}
+              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+              placeholder="Floor"
+              className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-black mt-2"
+            />
+          )}
           <textarea
             value={noteDraft}
             onChange={(e) => setNoteDraft(e.target.value)}

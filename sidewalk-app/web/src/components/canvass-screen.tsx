@@ -25,7 +25,7 @@ import {
 import { downloadCanvassCSV, type ExportCategory } from "@/lib/csv";
 import type { ParsedImport } from "@/lib/voter-import";
 import { deleteMapOverlay, subscribeMapOverlays, uploadMapOverlay, type MapOverlay } from "@/lib/map-overlays";
-import type { Canvass, House, Street } from "@/lib/types";
+import type { Canvass, House, Street, StreetType } from "@/lib/types";
 import { StreetNav } from "@/components/street-nav";
 import { HouseList } from "@/components/house-list";
 import { AddHouseBar } from "@/components/add-house-bar";
@@ -206,33 +206,25 @@ export function CanvassScreen({
     }
   };
 
-  const handleAddStreet = async (name: string) => {
+  const handleAddStreet = async (name: string, type: StreetType = "street", address?: string) => {
     try {
-      const id = await addStreet(campaignId, canvassId, name);
+      const id = await addStreet(campaignId, canvassId, name, type, address);
       setActiveStreetId(id);
     } catch {
-      flashError("Couldn't add street.");
+      flashError(type === "condo" ? "Couldn't add condo." : "Couldn't add street.");
     }
   };
 
   const handleAddHouses = async (raw: string) => {
     if (!activeStreetId || !activeStreet) return;
+    const unitWord = activeStreet.type === "condo" ? "units" : "houses";
     try {
       const existing = new Set(activeHouses.map((h) => h.number));
-      const added = await addHouses(
-        campaignId,
-        canvassId,
-        activeStreetId,
-        raw,
-        existing,
-        activeStreet.name,
-        canvass.city,
-        canvass.state
-      );
-      if (added === 0) flashError("Those numbers are already logged on this street.");
-      else if (added > 1) flashError(`Added ${added} houses.`);
+      const added = await addHouses(campaignId, canvassId, activeStreet, raw, existing, canvass.city, canvass.state);
+      if (added === 0) flashError(`Those numbers are already logged on this ${activeStreet.type === "condo" ? "condo" : "street"}.`);
+      else if (added > 1) flashError(`Added ${added} ${unitWord}.`);
     } catch {
-      flashError("Couldn't add houses.");
+      flashError(`Couldn't add ${unitWord}.`);
     }
   };
 
@@ -541,21 +533,24 @@ export function CanvassScreen({
                 onLawnSignToggle={handleLawnSignToggle}
                 onRevisitToggle={handleRevisitToggle}
                 onNumberChange={(id, number) => updateActiveHouse(id, { number })}
+                onFloorChange={(id, floor) => updateActiveHouse(id, { floor })}
                 onNotesChange={(id, notes) => updateActiveHouse(id, { notes })}
                 onDelete={(id) => {
                   const h = activeHouses.find((x) => x.id === id);
-                  setConfirmDelete({ type: "house", id, label: `house ${h?.number ?? ""}` });
+                  const label = activeStreet?.type === "condo" ? `unit ${h?.number ?? ""}` : `house ${h?.number ?? ""}`;
+                  setConfirmDelete({ type: "house", id, label });
                 }}
                 canDelete={!isGuest}
               />
             </div>
-            {activeStreet && <AddHouseBar onAdd={handleAddHouses} />}
+            {activeStreet && <AddHouseBar onAdd={handleAddHouses} isCondo={activeStreet.type === "condo"} />}
           </div>
         ) : loadingMapHouses ? (
           <LoadingScreen />
         ) : (
           <MapView
             houses={mapHouses}
+            streets={streets}
             overlays={overlays}
             onUploadOverlay={isGuest ? undefined : handleUploadOverlay}
             onDeleteOverlay={isGuest ? undefined : handleDeleteOverlay}
