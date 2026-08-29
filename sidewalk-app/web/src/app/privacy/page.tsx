@@ -32,6 +32,7 @@ const sections: LegalSection[] = [
           This Policy should be read alongside our <Link href="/terms">Terms of Service</Link>, which
           governs your use of the Service more broadly.
         </p>
+        <p>Parts of Sidewalk&rsquo;s software are built with the help of an AI coding agent, used under our team&rsquo;s direction and review.</p>
       </>
     ),
   },

@@ -114,6 +114,7 @@ const sections: LegalSection[] = [
           any particular country, province, state, or municipality. Section 7 covers what that means for
           you.
         </p>
+        <p>Parts of Sidewalk&rsquo;s software are built with the help of an AI coding agent, used under our team&rsquo;s direction and review.</p>
       </>
     ),
   },
