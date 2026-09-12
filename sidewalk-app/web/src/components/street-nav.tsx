@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, Flag, Plus, Trash2, X } from "lucide-react";
+import { Building2, Flag, Plus, Search, Trash2, X } from "lucide-react";
 import type { Street, StreetType } from "@/lib/types";
 
 function RevisitBadge({ count }: { count: number }) {
@@ -178,11 +178,28 @@ export function StreetNav({
   canDelete?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  // A voter-list import can create hundreds of streets at once (see
+  // ImportCSVModal) — with a list that long, scanning for one street by
+  // eye stops being practical, so this filters what's rendered below
+  // rather than being a real query against Firestore.
+  const filteredStreets = search.trim()
+    ? streets.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : streets;
 
   return (
     <>
       {/* Mobile: horizontal chip scroller */}
       <div className="md:hidden flex items-center gap-2 px-4 py-3 overflow-x-auto whitespace-nowrap border-b border-gray-200">
+        <div className="flex-shrink-0 flex items-center gap-1.5 border-2 border-black rounded-full pl-3 pr-3 py-2 bg-white">
+          <Search size={14} strokeWidth={2.5} className="text-gray-400 flex-shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search streets"
+            className="outline-none text-sm w-28 bg-transparent"
+          />
+        </div>
         {allowAll && (
           <button
             onClick={() => onSelect(null)}
@@ -194,7 +211,10 @@ export function StreetNav({
             ALL
           </button>
         )}
-        {streets.map((s) => {
+        {filteredStreets.length === 0 && (
+          <div className="flex-shrink-0 text-sm text-gray-400 px-2">No streets match &ldquo;{search.trim()}&rdquo;.</div>
+        )}
+        {filteredStreets.map((s) => {
           const active = activeStreetId === s.id;
           return editingId === s.id ? (
             <StreetEditField
@@ -248,7 +268,18 @@ export function StreetNav({
 
       {/* Tablet/desktop: persistent sidebar list */}
       <div className="hidden md:flex md:flex-col md:w-72 md:flex-shrink-0 border-r-2 border-black overflow-y-auto">
-        <div className="p-3 flex flex-col gap-1.5">
+        <div className="sticky top-0 bg-white p-3 pb-2 border-b border-gray-100 z-10">
+          <div className="flex items-center gap-1.5 border-2 border-black rounded-lg px-2.5 py-2">
+            <Search size={14} strokeWidth={2.5} className="text-gray-400 flex-shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search streets"
+              className="outline-none text-sm flex-1 min-w-0 bg-transparent"
+            />
+          </div>
+        </div>
+        <div className="p-3 pt-2 flex flex-col gap-1.5">
           {allowAll && (
             <button
               onClick={() => onSelect(null)}
@@ -260,7 +291,10 @@ export function StreetNav({
               All streets
             </button>
           )}
-          {streets.map((s) => {
+          {filteredStreets.length === 0 && (
+            <div className="text-sm text-gray-400 text-center py-4">No streets match &ldquo;{search.trim()}&rdquo;.</div>
+          )}
+          {filteredStreets.map((s) => {
             const active = activeStreetId === s.id;
             return editingId === s.id ? (
               <StreetEditField
