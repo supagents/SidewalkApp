@@ -9,6 +9,7 @@ import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { Layers, Plus, Trash2 } from "lucide-react";
 import { STATUS_COLORS, STATUS_LABEL, STATUS_ORDER } from "@/components/status-icons";
 import { UploadOverlayModal } from "@/components/upload-overlay-modal";
+import { pointInGeometry } from "@/lib/geo";
 import type { MapOverlay } from "@/lib/map-overlays";
 import type { House, HouseStatus, Street } from "@/lib/types";
 
@@ -86,7 +87,8 @@ function LayersPanel({
       </div>
       {overlays.length === 0 ? (
         <div className="px-3.5 py-4 text-xs text-gray-400 text-center leading-relaxed">
-          No boundary layers yet — ward, riding, poll, or any other district file.
+          No boundary layers yet — ward, riding, poll, or any other district file. Once one&rsquo;s added, tap a
+          shape on the map to see a supporter breakdown for everyone logged inside it.
         </div>
       ) : (
         <div className="max-h-52 overflow-y-auto divide-y divide-gray-100">
@@ -242,6 +244,76 @@ function condoPopupContent(street: Street, units: House[]): HTMLDivElement {
   return container;
 }
 
+// Clicking a boundary shape (ward, riding, poll division — whatever was
+// uploaded, see map-overlays.ts) shows the same status-count breakdown
+// as a condo popup, but for every geocoded house that falls inside that
+// one shape rather than one building. "Inside" is a live point-in-polygon
+// check against the houses passed in, not something stored anywhere —
+// there's no new field on a house for this, so it stays correct even as
+// houses get added, moved, or re-geocoded after the boundary was uploaded.
+function wardStatsPopupContent(label: string, housesInside: House[]): HTMLDivElement {
+  const container = document.createElement("div");
+  container.style.fontFamily = "'Helvetica Neue',Helvetica,Arial,sans-serif";
+  container.style.minWidth = "170px";
+  container.style.maxWidth = "230px";
+
+  const title = document.createElement("div");
+  title.style.fontWeight = "800";
+  title.style.marginBottom = "4px";
+  title.textContent = label;
+  container.appendChild(title);
+
+  const subtitle = document.createElement("div");
+  subtitle.style.fontSize = "11px";
+  subtitle.style.color = "#6B7280";
+  subtitle.style.marginBottom = "6px";
+  subtitle.textContent = `${housesInside.length} logged door${housesInside.length === 1 ? "" : "s"} pinned inside this boundary`;
+  container.appendChild(subtitle);
+
+  if (housesInside.length === 0) {
+    const empty = document.createElement("div");
+    empty.style.fontSize = "12px";
+    empty.style.color = "#9CA3AF";
+    empty.textContent = "No geocoded houses fall inside this boundary (yet).";
+    container.appendChild(empty);
+    return container;
+  }
+
+  const list = document.createElement("div");
+  list.style.display = "flex";
+  list.style.flexDirection = "column";
+  list.style.gap = "4px";
+
+  FILTER_KEYS.forEach((key) => {
+    const count = housesInside.filter((h) => (h.status ?? UNLOGGED) === key).length;
+    if (count === 0) return;
+
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = "6px";
+    row.style.fontSize = "12px";
+
+    const dot = document.createElement("span");
+    dot.style.width = "8px";
+    dot.style.height = "8px";
+    dot.style.borderRadius = "50%";
+    dot.style.flexShrink = "0";
+    dot.style.background = filterColor(key);
+    dot.style.border = "1px solid #000";
+    row.appendChild(dot);
+
+    const rowLabel = document.createElement("span");
+    rowLabel.textContent = `${filterLabel(key)} — ${count}`;
+    row.appendChild(rowLabel);
+
+    list.appendChild(row);
+  });
+
+  container.appendChild(list);
+  return container;
+}
+
 export function MapView({
   houses,
   streets = [],
@@ -265,6 +337,15 @@ export function MapView({
   const [hiddenOverlayIds, setHiddenOverlayIds] = useState<Set<string>>(new Set());
   const [layersPanelOpen, setLayersPanelOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  // Read by the ward-boundary popup below, which is bound once per
+  // shape (not rebuilt on every house update — see the overlay effect's
+  // own comment on why) but needs the CURRENT houses/filter state at
+  // the moment someone actually clicks it, not whatever was current
+  // when the shape was first drawn.
+  const housesRef = useRef<House[]>(houses);
+  const hiddenRef = useRef<Set<FilterKey>>(hidden);
+  housesRef.current = houses;
+  hiddenRef.current = hidden;
 
   const toggleFilter = (key: FilterKey) => {
     setHidden((prev) => {
@@ -328,8 +409,22 @@ export function MapView({
         layer = L.geoJSON(o.geojson, {
           style: { color: o.color, weight: 2, fillColor: o.color, fillOpacity: 0.08 },
           onEachFeature: (feature, l) => {
-            const label = feature.properties?.label as string | null | undefined;
-            l.bindPopup(popupContent(label || o.name));
+            const label = (feature.properties?.label as string | null | undefined) || o.name;
+            // A function, not a fixed string — Leaflet calls this the
+            // moment the popup actually opens, so it always reflects
+            // whatever houses/filters are current then, not whatever
+            // was current back when this shape was first drawn.
+            l.bindPopup(() => {
+              if (!feature.geometry) return popupContent(label);
+              const inside = housesRef.current.filter(
+                (h) =>
+                  h.lat != null &&
+                  h.lng != null &&
+                  !hiddenRef.current.has(h.status ?? UNLOGGED) &&
+                  pointInGeometry(h.lng as number, h.lat as number, feature.geometry)
+              );
+              return wardStatsPopupContent(label, inside);
+            });
           },
         });
         overlayLayersRef.current.set(o.id, layer);
