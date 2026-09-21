@@ -12,9 +12,10 @@ export function ImportCSVModal({
 }: {
   streets: Street[];
   onCancel: () => void;
-  onImport: (parsed: ParsedImport) => Promise<void>;
+  onImport: (parsed: ParsedImport, markAsSupporters: boolean) => Promise<void>;
 }) {
   const [parsed, setParsed] = useState<ParsedImport | null>(null);
+  const [markAsSupporters, setMarkAsSupporters] = useState(false);
   const [error, setError] = useState("");
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,7 +51,7 @@ export function ImportCSVModal({
     setImporting(true);
     setError("");
     try {
-      await onImport(parsed);
+      await onImport(parsed, markAsSupporters);
     } catch {
       setError("Import failed partway through — check the street/house list for what landed, then try again for anything missing.");
       setImporting(false);
@@ -112,6 +113,23 @@ export function ImportCSVModal({
                 </div>
               ))}
             </div>
+
+            <label className="flex items-start gap-2.5 mb-4 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={markAsSupporters}
+                onChange={(e) => setMarkAsSupporters(e.target.checked)}
+                className="mt-0.5 w-[18px] h-[18px] flex-shrink-0 accent-black border-2 border-black rounded cursor-pointer"
+              />
+              <span className="text-sm leading-relaxed">
+                <span className="font-semibold">This is a supporter list</span>
+                <span className="text-gray-500">
+                  {" "}
+                  — mark everyone on it as a Supporter. Houses already logged that match an address on this list
+                  get updated to Supporter too, not skipped.
+                </span>
+              </span>
+            </label>
           </>
         )}
 

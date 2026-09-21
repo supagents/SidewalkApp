@@ -305,12 +305,15 @@ export function CanvassScreen({
     }
   };
 
-  const handleImportVoterList = async (parsed: ParsedImport) => {
-    const result = await importVoterList(campaignId, canvassId, parsed, streets, canvass.city, canvass.state);
+  const handleImportVoterList = async (parsed: ParsedImport, markAsSupporters: boolean) => {
+    const result = await importVoterList(campaignId, canvassId, parsed, streets, canvass.city, canvass.state, markAsSupporters);
     setImportOpen(false);
     flashError(
       `Imported ${result.housesAdded} house${result.housesAdded === 1 ? "" : "s"}` +
         (result.streetsCreated > 0 ? `, created ${result.streetsCreated} street${result.streetsCreated === 1 ? "" : "s"}` : "") +
+        (result.housesMarkedSupporter > 0
+          ? `, marked ${result.housesMarkedSupporter} existing house${result.housesMarkedSupporter === 1 ? "" : "s"} as Supporter`
+          : "") +
         (result.housesSkipped > 0 ? `, skipped ${result.housesSkipped} already logged` : "") +
         "."
     );

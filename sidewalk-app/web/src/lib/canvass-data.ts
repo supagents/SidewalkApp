@@ -353,7 +353,12 @@ export async function addHouses(
   return toAdd.length;
 }
 
-export type VoterImportResult = { housesAdded: number; housesSkipped: number; streetsCreated: number };
+export type VoterImportResult = {
+  housesAdded: number;
+  housesSkipped: number;
+  housesMarkedSupporter: number;
+  streetsCreated: number;
+};
 
 // Canvass-wide counterpart to addHouses: takes a ParsedImport (already
 // grouped by street name and sorted by house number — see
@@ -363,19 +368,29 @@ export type VoterImportResult = { housesAdded: number; housesSkipped: number; st
 // first. Each group's own city/state (from its CSV rows) wins over the
 // canvass's when building a house's address; falls back to the canvass's
 // when a row didn't have one.
+//
+// markAsSupporters is for uploading a *known-supporter* list rather than
+// a general voter file: every new house from it starts already marked
+// "support" instead of unlogged, and — since a supporter list commonly
+// overlaps with addresses already imported from a base voter file —
+// a row that matches an existing house updates that house's status to
+// "support" too, rather than being silently skipped the way a plain
+// re-import's duplicates are.
 export async function importVoterList(
   campaignId: string,
   canvassId: string,
   parsed: ParsedImport,
   existingStreets: Street[],
   fallbackCity: string,
-  fallbackState: string
+  fallbackState: string,
+  markAsSupporters: boolean = false
 ): Promise<VoterImportResult> {
   const existingByName = new Map(existingStreets.map((s) => [s.name.trim().toLowerCase(), s]));
   const houseOps: WriteOp[] = [];
   const streetOps: WriteOp[] = [];
   let housesAdded = 0;
   let housesSkipped = 0;
+  let housesMarkedSupporter = 0;
   let streetsCreated = 0;
 
   for (let i = 0; i < parsed.streets.length; i++) {
@@ -383,27 +398,38 @@ export async function importVoterList(
     const existing = existingByName.get(group.name.trim().toLowerCase());
     const streetId = existing ? existing.id : newId(streetsCol(campaignId, canvassId));
 
-    let existingNumbers = new Set<string>();
+    let existingByNumber = new Map<string, DocumentReference>();
     if (existing) {
       const housesSnap = await getDocs(housesCol(campaignId, canvassId, streetId));
-      existingNumbers = new Set(housesSnap.docs.map((d) => d.data().number as string));
+      existingByNumber = new Map(housesSnap.docs.map((d) => [d.data().number as string, d.ref]));
     }
 
     const seenInFile = new Set<string>();
     let addedForStreet = 0;
     group.houses.forEach((h) => {
-      if (existingNumbers.has(h.number) || seenInFile.has(h.number)) {
+      if (seenInFile.has(h.number)) {
         housesSkipped++;
-        return;
+        return; // a repeat within this same file, not a real second address
       }
       seenInFile.add(h.number);
+
+      const existingRef = existingByNumber.get(h.number);
+      if (existingRef) {
+        housesSkipped++;
+        if (markAsSupporters) {
+          houseOps.push({ ref: existingRef, data: { status: "support" }, merge: true });
+          housesMarkedSupporter++;
+        }
+        return;
+      }
+
       addedForStreet++;
       houseOps.push({
         ref: doc(housesCol(campaignId, canvassId, streetId)),
         data: {
           number: h.number,
           floor: "",
-          status: null,
+          status: markAsSupporters ? "support" : null,
           lawnSign: false,
           revisit: false,
           notes: h.notes,
@@ -429,7 +455,13 @@ export async function importVoterList(
     }
   }
 
-  if (housesAdded === 0) return { housesAdded: 0, housesSkipped, streetsCreated: 0 };
+  // A supporter-list upload can legitimately add zero new houses — every
+  // address already exists — while still needing every one of those
+  // existing houses marked, so this can't just check housesAdded the way
+  // a plain import's "nothing to do" bailout used to.
+  if (housesAdded === 0 && housesMarkedSupporter === 0) {
+    return { housesAdded: 0, housesSkipped, housesMarkedSupporter: 0, streetsCreated: 0 };
+  }
 
   await setRefsInChunks(streetOps);
   await setRefsInChunks(houseOps);
@@ -439,7 +471,7 @@ export async function importVoterList(
     updatedAt: serverTimestamp(),
   });
 
-  return { housesAdded, housesSkipped, streetsCreated };
+  return { housesAdded, housesSkipped, housesMarkedSupporter, streetsCreated };
 }
 
 export async function updateHouse(
