@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, Flag, Plus, Search, Trash2, X } from "lucide-react";
+import { Building2, Flag, MapPin, Plus, Search, Trash2, X } from "lucide-react";
 import type { Street, StreetType } from "@/lib/types";
+import type { WardOption } from "@/lib/wards";
 
 function RevisitBadge({ count }: { count: number }) {
   if (count <= 0) return null;
@@ -167,6 +168,11 @@ export function StreetNav({
   onDeleteRequest,
   allowAll = false,
   canDelete = true,
+  wardOptions = [],
+  selectedWardKey = null,
+  onSelectWard,
+  streetIdsInWard = null,
+  loadingWardData = false,
 }: {
   streets: Street[];
   activeStreetId: string | null;
@@ -176,6 +182,11 @@ export function StreetNav({
   onDeleteRequest: (street: Street) => void;
   allowAll?: boolean;
   canDelete?: boolean;
+  wardOptions?: WardOption[];
+  selectedWardKey?: string | null;
+  onSelectWard?: (key: string | null) => void;
+  streetIdsInWard?: Set<string> | null;
+  loadingWardData?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -183,9 +194,18 @@ export function StreetNav({
   // ImportCSVModal) — with a list that long, scanning for one street by
   // eye stops being practical, so this filters what's rendered below
   // rather than being a real query against Firestore.
+  const wardFilteredStreets =
+    selectedWardKey && streetIdsInWard ? streets.filter((s) => streetIdsInWard.has(s.id)) : streets;
   const filteredStreets = search.trim()
-    ? streets.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
-    : streets;
+    ? wardFilteredStreets.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : wardFilteredStreets;
+  const emptyStateText = loadingWardData
+    ? "Loading ward data…"
+    : search.trim()
+    ? `No streets match “${search.trim()}”.`
+    : selectedWardKey
+    ? "No streets in this ward yet."
+    : "No streets yet.";
 
   return (
     <>
@@ -200,6 +220,23 @@ export function StreetNav({
             className="outline-none text-sm w-28 bg-transparent"
           />
         </div>
+        {wardOptions.length > 0 && (
+          <div className="flex-shrink-0 flex items-center gap-1.5 border-2 border-black rounded-full pl-2.5 pr-2 py-2 bg-white">
+            <MapPin size={14} strokeWidth={2.5} className="text-gray-400 flex-shrink-0" />
+            <select
+              value={selectedWardKey ?? ""}
+              onChange={(e) => onSelectWard?.(e.target.value || null)}
+              className="outline-none text-sm max-w-[9rem] bg-transparent font-bold"
+            >
+              <option value="">All wards</option>
+              {wardOptions.map((w) => (
+                <option key={w.key} value={w.key}>
+                  {w.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {allowAll && (
           <button
             onClick={() => onSelect(null)}
@@ -211,9 +248,7 @@ export function StreetNav({
             ALL
           </button>
         )}
-        {filteredStreets.length === 0 && (
-          <div className="flex-shrink-0 text-sm text-gray-400 px-2">No streets match &ldquo;{search.trim()}&rdquo;.</div>
-        )}
+        {filteredStreets.length === 0 && <div className="flex-shrink-0 text-sm text-gray-400 px-2">{emptyStateText}</div>}
         {filteredStreets.map((s) => {
           const active = activeStreetId === s.id;
           return editingId === s.id ? (
@@ -268,7 +303,7 @@ export function StreetNav({
 
       {/* Tablet/desktop: persistent sidebar list */}
       <div className="hidden md:flex md:flex-col md:w-72 md:flex-shrink-0 border-r-2 border-black overflow-y-auto">
-        <div className="sticky top-0 bg-white p-3 pb-2 border-b border-gray-100 z-10">
+        <div className="sticky top-0 bg-white p-3 pb-2 border-b border-gray-100 z-10 flex flex-col gap-1.5">
           <div className="flex items-center gap-1.5 border-2 border-black rounded-lg px-2.5 py-2">
             <Search size={14} strokeWidth={2.5} className="text-gray-400 flex-shrink-0" />
             <input
@@ -278,6 +313,23 @@ export function StreetNav({
               className="outline-none text-sm flex-1 min-w-0 bg-transparent"
             />
           </div>
+          {wardOptions.length > 0 && (
+            <div className="flex items-center gap-1.5 border-2 border-black rounded-lg px-2.5 py-2">
+              <MapPin size={14} strokeWidth={2.5} className="text-gray-400 flex-shrink-0" />
+              <select
+                value={selectedWardKey ?? ""}
+                onChange={(e) => onSelectWard?.(e.target.value || null)}
+                className="outline-none text-sm flex-1 min-w-0 bg-transparent font-bold"
+              >
+                <option value="">All wards</option>
+                {wardOptions.map((w) => (
+                  <option key={w.key} value={w.key}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="p-3 pt-2 flex flex-col gap-1.5">
           {allowAll && (
@@ -291,9 +343,7 @@ export function StreetNav({
               All streets
             </button>
           )}
-          {filteredStreets.length === 0 && (
-            <div className="text-sm text-gray-400 text-center py-4">No streets match &ldquo;{search.trim()}&rdquo;.</div>
-          )}
+          {filteredStreets.length === 0 && <div className="text-sm text-gray-400 text-center py-4">{emptyStateText}</div>}
           {filteredStreets.map((s) => {
             const active = activeStreetId === s.id;
             return editingId === s.id ? (

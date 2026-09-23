@@ -25,6 +25,8 @@ import {
 import { downloadCanvassCSV, type ExportCategory } from "@/lib/csv";
 import type { ParsedImport } from "@/lib/voter-import";
 import { deleteMapOverlay, subscribeMapOverlays, uploadMapOverlay, type MapOverlay } from "@/lib/map-overlays";
+import { pointInGeometry } from "@/lib/geo";
+import { buildWardOptions, findWardOption } from "@/lib/wards";
 import type { Canvass, House, Street, StreetType } from "@/lib/types";
 import { StreetNav } from "@/components/street-nav";
 import { HouseList } from "@/components/house-list";
@@ -88,6 +90,7 @@ export function CanvassScreen({
   const [loadingMapHouses, setLoadingMapHouses] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [overlays, setOverlays] = useState<MapOverlay[]>([]);
+  const [selectedWardKey, setSelectedWardKey] = useState<string | null>(null);
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -116,15 +119,23 @@ export function CanvassScreen({
     return subscribeHouses(campaignId, canvassId, activeStreetId, setActiveHouses);
   }, [campaignId, canvassId, activeStreetId]);
 
-  // Map data loads only while the Map tab is open. A single street
-  // uses a live subscription (same as the list view); "All" is a
-  // one-time full-canvass read — matches the same tradeoff already
-  // made for the "whole canvass" results scope, avoiding a listener
-  // per street just to support a view most sessions won't open.
+  // Canvass-wide house data (every street, not just one) loads while the
+  // Map tab is open — same as before — OR whenever a ward filter is
+  // active, since narrowing the street list by ward (see StreetNav) needs
+  // to know every street's houses regardless of which tab you're on. A
+  // single street still uses a live subscription when ward mode is off,
+  // same tradeoff as always; with ward mode on, a specific map street
+  // selection is applied by filtering this broader set at render time
+  // instead (see the mapHouses.filter below), which costs that one edge
+  // case its live-ness but keeps this effect simple.
+  const wardModeActive = selectedWardKey !== null;
   useEffect(() => {
-    if (viewMode !== "map") return;
-    if (mapStreetId) {
-      return subscribeHouses(campaignId, canvassId, mapStreetId, setMapHouses);
+    const needsCanvasWide = (viewMode === "map" && !mapStreetId) || wardModeActive;
+    if (!needsCanvasWide) {
+      if (viewMode === "map" && mapStreetId) {
+        return subscribeHouses(campaignId, canvassId, mapStreetId, setMapHouses);
+      }
+      return;
     }
     let cancelled = false;
     Promise.resolve().then(async () => {
@@ -140,16 +151,16 @@ export function CanvassScreen({
     return () => {
       cancelled = true;
     };
-  }, [viewMode, mapStreetId, campaignId, canvassId]);
+  }, [viewMode, mapStreetId, wardModeActive, campaignId, canvassId]);
 
-  // Boundary layers (ward/riding/poll/etc.) are only relevant on the map,
-  // and can carry a fair amount of GeoJSON — same "only while the tab is
-  // open" gating as the map houses fetch above, so this data isn't pulled
-  // down on every canvass visit.
+  // Boundary layers (ward/riding/poll/etc.) are needed to even show the
+  // ward-filter picker, on either tab, so — unlike the house data above —
+  // this isn't gated to the Map tab. It's cheap to keep subscribed: a
+  // canvass typically has a handful of these at most, nothing like the
+  // read volume houses can reach.
   useEffect(() => {
-    if (viewMode !== "map") return;
     return subscribeMapOverlays(campaignId, canvassId, setOverlays);
-  }, [viewMode, campaignId, canvassId]);
+  }, [campaignId, canvassId]);
 
   // Only pull every street's houses (a one-time read, not a live
   // subscription) when the results panel actually needs the "whole
@@ -177,6 +188,19 @@ export function CanvassScreen({
   }
 
   const activeStreet = streets.find((s) => s.id === activeStreetId) || null;
+
+  const wardOptions = buildWardOptions(overlays);
+  const selectedWard = findWardOption(wardOptions, selectedWardKey);
+  // Which streets have at least one geocoded house inside the selected
+  // ward — null (not an empty Set) means "no ward selected, show
+  // everything," a distinct state from "ward selected, matches nothing."
+  const streetIdsInSelectedWard = selectedWard
+    ? new Set(
+        mapHouses
+          .filter((h) => h.lat != null && h.lng != null && pointInGeometry(h.lng as number, h.lat as number, selectedWard.geometry))
+          .map((h) => h.streetId)
+      )
+    : null;
 
   const startEditName = () => {
     setNameDraft(canvass.name);
@@ -510,6 +534,11 @@ export function CanvassScreen({
             onRename={(id, name) => renameStreet(campaignId, canvassId, id, name).catch(() => flashError("Couldn't rename street."))}
             onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
             canDelete={!isGuest}
+            wardOptions={wardOptions}
+            selectedWardKey={selectedWardKey}
+            onSelectWard={setSelectedWardKey}
+            streetIdsInWard={streetIdsInSelectedWard}
+            loadingWardData={wardModeActive && loadingMapHouses}
           />
         ) : (
           <StreetNav
@@ -521,6 +550,11 @@ export function CanvassScreen({
             onDeleteRequest={(s) => setConfirmDelete({ type: "street", id: s.id, label: s.name })}
             canDelete={!isGuest}
             allowAll
+            wardOptions={wardOptions}
+            selectedWardKey={selectedWardKey}
+            onSelectWard={setSelectedWardKey}
+            streetIdsInWard={streetIdsInSelectedWard}
+            loadingWardData={wardModeActive && loadingMapHouses}
           />
         )}
 
@@ -552,9 +586,10 @@ export function CanvassScreen({
           <LoadingScreen />
         ) : (
           <MapView
-            houses={mapHouses}
+            houses={mapStreetId ? mapHouses.filter((h) => h.streetId === mapStreetId) : mapHouses}
             streets={streets}
             overlays={overlays}
+            selectedWardKey={selectedWardKey}
             onUploadOverlay={isGuest ? undefined : handleUploadOverlay}
             onDeleteOverlay={isGuest ? undefined : handleDeleteOverlay}
             canManageOverlays={!isGuest}
