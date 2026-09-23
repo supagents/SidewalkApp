@@ -12,6 +12,7 @@ import { UploadOverlayModal } from "@/components/upload-overlay-modal";
 import { pointInGeometry } from "@/lib/geo";
 import type { MapOverlay } from "@/lib/map-overlays";
 import type { House, HouseStatus, Street } from "@/lib/types";
+import { buildWardOptions, findWardOption } from "@/lib/wards";
 
 const NO_STATUS_COLOR = "#D1D5DB"; // matches the pale gray "unlogged" face outline elsewhere in the app
 const UNLOGGED = "unlogged";
@@ -318,6 +319,7 @@ export function MapView({
   houses,
   streets = [],
   overlays = [],
+  selectedWardKey = null,
   onUploadOverlay,
   onDeleteOverlay,
   canManageOverlays = false,
@@ -325,10 +327,16 @@ export function MapView({
   houses: House[];
   streets?: Street[];
   overlays?: MapOverlay[];
+  selectedWardKey?: string | null;
   onUploadOverlay?: (name: string, file: File) => Promise<void>;
   onDeleteOverlay?: (id: string) => void;
   canManageOverlays?: boolean;
 }) {
+  // Recomputed from `overlays` each render rather than memoized — overlay
+  // lists are small (a handful of uploaded boundary files at most), so
+  // this is cheap, and it keeps the selected ward's geometry trivially in
+  // sync with whichever overlay is currently loaded.
+  const selectedWard = selectedWardKey ? findWardOption(buildWardOptions(overlays), selectedWardKey) : null;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const clusterGroupRef = useRef<L.MarkerClusterGroup | null>(null);
@@ -442,7 +450,13 @@ export function MapView({
     if (!map || !clusterGroup) return;
 
     clusterGroup.clearLayers();
-    const pinned = houses.filter((h) => h.lat != null && h.lng != null && !hidden.has(h.status ?? UNLOGGED));
+    const pinned = houses.filter(
+      (h) =>
+        h.lat != null &&
+        h.lng != null &&
+        !hidden.has(h.status ?? UNLOGGED) &&
+        (!selectedWard || pointInGeometry(h.lng as number, h.lat as number, selectedWard.geometry))
+    );
 
     // Every unit in a condo shares its building's exact coordinates, so
     // one pin per unit would just stack invisibly on top of each other —
@@ -487,9 +501,15 @@ export function MapView({
       const bounds = L.featureGroup(markers).getBounds();
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
     }
-  }, [houses, hidden, streets]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedWard is derived fresh from [overlays, selectedWardKey] every render; depending on those primitives instead of the object avoids rebuilding markers on unrelated re-renders.
+  }, [houses, hidden, streets, overlays, selectedWardKey]);
 
-  const allPinned = houses.filter((h) => h.lat != null && h.lng != null);
+  const allPinned = houses.filter(
+    (h) =>
+      h.lat != null &&
+      h.lng != null &&
+      (!selectedWard || pointInGeometry(h.lng as number, h.lat as number, selectedWard.geometry))
+  );
   const visiblePinned = allPinned.filter((h) => !hidden.has(h.status ?? UNLOGGED));
   const counts = FILTER_KEYS.reduce((acc, key) => {
     acc[key] = allPinned.filter((h) => (h.status ?? UNLOGGED) === key).length;
