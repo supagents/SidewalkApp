@@ -20,25 +20,32 @@ export function VerifyEmailScreen() {
   const checkVerified = async () => {
     setChecking(true);
     try {
+      // Force the token fresh BEFORE reload() — reload() is what flips
+      // the client-side user.emailVerified flag, and because AuthProvider
+      // listens via onIdTokenChanged, that alone is enough to let
+      // home-client.tsx's redirect into the app take over immediately.
+      // But reload() only refreshes the client-side profile fields; the
+      // signed-in session's actual auth token — the thing Firestore rules
+      // check via request.auth.token.email_verified — keeps whatever
+      // claims it had when it was issued until it's force-refreshed. If
+      // reload() ran first, there'd be a window where the app had already
+      // navigated into /campaigns on the strength of the (correct)
+      // client-side flag while the (stale) token Firestore actually sees
+      // still said unverified — long enough for an early write there to
+      // get rejected. getIdToken(true) always mints a token reflecting
+      // the account's CURRENT server-side state, verified or not,
+      // independent of whether reload() has run yet, so doing it first
+      // closes that window entirely. Deliberately NOT a
+      // window.location.reload() anywhere in this flow: a hard reload
+      // discards this whole JS context and restores whatever's on disk,
+      // and if that disk write hadn't durably landed yet, the reloaded
+      // page could come back with the very same stale token this is
+      // trying to get rid of. Staying in this tab means every subsequent
+      // request definitely uses the token that's actually in memory here,
+      // not a guess about what's on disk.
+      await auth.currentUser?.getIdToken(true);
       await auth.currentUser?.reload();
-      if (auth.currentUser?.emailVerified) {
-        // reload() refreshes the client-side user profile (emailVerified
-        // flips true here), but the signed-in session's auth token — the
-        // thing Firestore rules actually check via request.auth.token
-        // .email_verified — keeps whatever claims it had when it was
-        // issued until it's force-refreshed. getIdToken(true) mints a
-        // fresh one carrying the correct claim, and because AuthProvider
-        // listens via onIdTokenChanged, that alone updates this tab's
-        // React auth state and lets home-client.tsx's existing redirect
-        // take over — deliberately NOT a window.location.reload(): a
-        // hard reload discards this whole JS context and restores
-        // whatever's on disk, and if that disk write hadn't durably
-        // landed yet, the reloaded page could come back with the very
-        // same stale token this is trying to get rid of. Staying in this
-        // tab means every subsequent request definitely uses the token
-        // that's actually in memory here, not a guess about what's on disk.
-        await auth.currentUser?.getIdToken(true);
-      } else {
+      if (!auth.currentUser?.emailVerified) {
         flash("Still not verified — check your inbox (and spam folder).");
       }
     } catch (err) {
