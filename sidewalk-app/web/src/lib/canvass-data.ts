@@ -14,7 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { Canvass, CanvassExport, House, HouseStatus, Street, StreetType } from "@/lib/types";
+import type { Canvass, CanvassExport, CanvassMode, House, HouseStatus, Street, StreetType } from "@/lib/types";
 import type { ParsedImport } from "@/lib/voter-import";
 
 // Firestore caps a batch at 500 writes; this leaves headroom for a canvass
@@ -82,6 +82,7 @@ export function subscribeCanvasses(campaignId: string, cb: (canvasses: Canvass[]
           createdBy: data.createdBy,
           createdAt: data.createdAt?.toMillis?.() ?? 0,
           updatedAt: data.updatedAt?.toMillis?.() ?? 0,
+          mode: (data.mode as CanvassMode) ?? "standard",
           streetCount: data.streetCount ?? 0,
           doorCount: data.doorCount ?? 0,
           revisitCount: data.revisitCount ?? 0,
@@ -101,7 +102,8 @@ export async function createCanvass(
   name: string,
   createdBy: string,
   city: string,
-  state: string
+  state: string,
+  mode: CanvassMode = "standard"
 ) {
   const id = newId(canvassesCol(campaignId));
   await setDoc(canvassRef(campaignId, id), {
@@ -109,6 +111,7 @@ export async function createCanvass(
     createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    mode,
     streetCount: 0,
     doorCount: 0,
     revisitCount: 0,
@@ -612,6 +615,7 @@ export function subscribeCanvass(campaignId: string, canvassId: string, cb: (can
       createdBy: data.createdBy,
       createdAt: data.createdAt?.toMillis?.() ?? 0,
       updatedAt: data.updatedAt?.toMillis?.() ?? 0,
+      mode: (data.mode as CanvassMode) ?? "standard",
       streetCount: data.streetCount ?? 0,
       doorCount: data.doorCount ?? 0,
       revisitCount: data.revisitCount ?? 0,

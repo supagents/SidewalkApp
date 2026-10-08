@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { ArrowLeft, BarChart3, MapIcon, Share2, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, BarChart3, MapIcon, Route, Share2, Trash2, Upload } from "lucide-react";
 import {
   addHouses,
   addStreet,
@@ -30,6 +30,7 @@ import { buildWardOptions, findWardOption } from "@/lib/wards";
 import type { Canvass, House, Street, StreetType } from "@/lib/types";
 import { StreetNav } from "@/components/street-nav";
 import { HouseList } from "@/components/house-list";
+import { GotvChecklist } from "@/components/gotv-checklist";
 import { AddHouseBar } from "@/components/add-house-bar";
 import { ConfirmDeleteModal, type ConfirmDeleteTarget } from "@/components/confirm-delete-modal";
 import { ImportCSVModal } from "@/components/import-csv-modal";
@@ -84,7 +85,7 @@ export function CanvassScreen({
   const [stateDraft, setStateDraft] = useState("");
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [viewMode, setViewMode] = useState<"list" | "map" | "route">("list");
   const [mapStreetId, setMapStreetId] = useState<string | null>(null);
   const [mapHouses, setMapHouses] = useState<House[]>([]);
   const [loadingMapHouses, setLoadingMapHouses] = useState(false);
@@ -122,15 +123,17 @@ export function CanvassScreen({
   // Canvass-wide house data (every street, not just one) loads while the
   // Map tab is open — same as before — OR whenever a ward filter is
   // active, since narrowing the street list by ward (see StreetNav) needs
-  // to know every street's houses regardless of which tab you're on. A
-  // single street still uses a live subscription when ward mode is off,
+  // to know every street's houses regardless of which tab you're on — OR
+  // on the ROUTE tab (GOTV canvasses only), which by definition routes
+  // across every street in the canvass, not one at a time. A single
+  // street still uses a live subscription when neither of those applies,
   // same tradeoff as always; with ward mode on, a specific map street
   // selection is applied by filtering this broader set at render time
   // instead (see the mapHouses.filter below), which costs that one edge
   // case its live-ness but keeps this effect simple.
   const wardModeActive = selectedWardKey !== null;
   useEffect(() => {
-    const needsCanvasWide = (viewMode === "map" && !mapStreetId) || wardModeActive;
+    const needsCanvasWide = (viewMode === "map" && !mapStreetId) || viewMode === "route" || wardModeActive;
     if (!needsCanvasWide) {
       if (viewMode === "map" && mapStreetId) {
         return subscribeHouses(campaignId, canvassId, mapStreetId, setMapHouses);
@@ -522,9 +525,23 @@ export function CanvassScreen({
         >
           <MapIcon size={13} strokeWidth={2.5} /> MAP
         </button>
+        {canvass.mode === "gotv" && (
+          <button
+            onClick={() => setViewMode("route")}
+            className={
+              "flex-1 py-2 border-l-2 border-black flex items-center justify-center gap-1.5 " +
+              (viewMode === "route" ? "bg-black text-white" : "bg-white")
+            }
+          >
+            <Route size={13} strokeWidth={2.5} /> ROUTE
+          </button>
+        )}
       </div>
 
       <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
+        {/* The ROUTE tab is one flat, whole-canvass walk list — street
+            navigation doesn't apply to it, so it gets no StreetNav sidebar,
+            unlike LIST/MAP which are both scoped by street. */}
         {viewMode === "list" ? (
           <StreetNav
             streets={streets}
@@ -540,7 +557,7 @@ export function CanvassScreen({
             streetIdsInWard={streetIdsInSelectedWard}
             loadingWardData={wardModeActive && loadingMapHouses}
           />
-        ) : (
+        ) : viewMode === "map" ? (
           <StreetNav
             streets={streets}
             activeStreetId={mapStreetId}
@@ -556,7 +573,7 @@ export function CanvassScreen({
             streetIdsInWard={streetIdsInSelectedWard}
             loadingWardData={wardModeActive && loadingMapHouses}
           />
-        )}
+        ) : null}
 
         {viewMode === "list" ? (
           <div className="flex-1 flex flex-col min-h-0">
@@ -582,6 +599,17 @@ export function CanvassScreen({
             </div>
             {activeStreet && <AddHouseBar onAdd={handleAddHouses} isCondo={activeStreet.type === "condo"} />}
           </div>
+        ) : viewMode === "route" ? (
+          <GotvChecklist
+            houses={mapHouses}
+            streets={streets}
+            loading={loadingMapHouses}
+            onStatusChange={(house, status) =>
+              updateHouse(campaignId, canvassId, house.streetId, house.id, { status }).catch(() =>
+                flashError("Couldn't save. Check your connection.")
+              )
+            }
+          />
         ) : loadingMapHouses ? (
           <LoadingScreen />
         ) : (
