@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Crosshair, MapPin } from "lucide-react";
+import { Crosshair, MapPin, Search } from "lucide-react";
 import { FaceIcon, NotHomeIcon } from "@/components/status-icons";
 import { nearestNeighborRoute, type LatLng } from "@/lib/route";
 import type { House, HouseStatus, Street } from "@/lib/types";
@@ -11,6 +11,43 @@ type StartPoint = { label: string; at: LatLng };
 function formatDistance(meters: number) {
   if (meters < 1000) return `${Math.round(meters)} m`;
   return `${(meters / 1000).toFixed(1)} km`;
+}
+
+// A canvass can easily have dozens of geocoded houses, which makes a plain
+// <select> a poor way to find one — no in-place filtering, and some mobile
+// browsers render native <select> pickers that are awkward to scan. This
+// is the same search-then-pick pattern StreetNav already uses for its
+// (often much longer) street list.
+function HouseSearchPicker({ houseOptions, onPick }: { houseOptions: { id: string; label: string }[]; onPick: (id: string) => void }) {
+  const [query, setQuery] = useState("");
+  const filtered = query.trim()
+    ? houseOptions.filter((h) => h.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : houseOptions;
+
+  return (
+    <div className="text-left">
+      <div className="flex items-center gap-1.5 border-2 border-black rounded-lg px-2.5 py-2 mb-1.5">
+        <Search size={14} strokeWidth={2.5} className="text-gray-400 flex-shrink-0" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search houses…"
+          className="outline-none text-sm flex-1 min-w-0 bg-transparent"
+        />
+      </div>
+      <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+        {filtered.length === 0 ? (
+          <div className="text-xs text-gray-400 text-center py-3">No houses match &ldquo;{query.trim()}&rdquo;.</div>
+        ) : (
+          filtered.map((h) => (
+            <button key={h.id} onClick={() => onPick(h.id)} className="w-full text-left px-2.5 py-2 text-sm font-semibold hover:bg-gray-50">
+              {h.label}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
 }
 
 function LocateControl({
@@ -62,20 +99,7 @@ function LocateControl({
       {houseOptions.length > 0 && (
         <div className="mt-3">
           <div className="text-xs text-gray-400 mb-1.5">or start from a specific house</div>
-          <select
-            defaultValue=""
-            onChange={(e) => e.target.value && onPickHouse(e.target.value)}
-            className="w-full border-2 border-black rounded-lg px-2.5 py-2 text-sm outline-none bg-white"
-          >
-            <option value="" disabled>
-              Choose a house…
-            </option>
-            {houseOptions.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.label}
-              </option>
-            ))}
-          </select>
+          <HouseSearchPicker houseOptions={houseOptions} onPick={onPickHouse} />
         </div>
       )}
     </div>
