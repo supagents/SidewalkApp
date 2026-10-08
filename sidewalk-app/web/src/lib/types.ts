@@ -51,12 +51,20 @@ export type Street = {
   lawnSignCount: number;
 };
 
+// "gotv" unlocks the ROUTE tab in CanvassScreen — a whole-canvass, proximity-
+// ordered walk list (see lib/route.ts). Everything else about a canvass
+// (adding streets/houses, importing, the map) works identically regardless
+// of mode; this is purely a feature gate chosen at creation time, not a
+// restriction.
+export type CanvassMode = "standard" | "gotv";
+
 export type Canvass = {
   id: string;
   name: string;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
+  mode: CanvassMode;
   streetCount: number;
   doorCount: number;
   revisitCount: number;

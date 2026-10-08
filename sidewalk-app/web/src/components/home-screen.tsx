@@ -11,7 +11,28 @@ import { deleteCampaign, renameCampaign, subscribeCampaign } from "@/lib/campaig
 import { downloadAllCSV } from "@/lib/csv";
 import { authErrorMessage, reauthenticate } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
-import type { Campaign, Canvass, House } from "@/lib/types";
+import type { Campaign, Canvass, CanvassMode, House } from "@/lib/types";
+
+function ModeToggle({ mode, onChange }: { mode: CanvassMode; onChange: (m: CanvassMode) => void }) {
+  return (
+    <div className="flex border border-black rounded-full overflow-hidden text-[10px] font-bold w-fit mb-3">
+      <button
+        type="button"
+        onClick={() => onChange("standard")}
+        className={"px-2.5 py-1 " + (mode === "standard" ? "bg-black text-white" : "bg-white text-gray-500")}
+      >
+        STANDARD
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("gotv")}
+        className={"px-2.5 py-1 border-l border-black " + (mode === "gotv" ? "bg-black text-white" : "bg-white text-gray-500")}
+      >
+        GOTV
+      </button>
+    </div>
+  );
+}
 
 export function HomeScreen({
   campaignId,
@@ -29,6 +50,7 @@ export function HomeScreen({
   const [newName, setNewName] = useState("");
   const [newCity, setNewCity] = useState("");
   const [newState, setNewState] = useState("");
+  const [newMode, setNewMode] = useState<CanvassMode>("standard");
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [editingName, setEditingName] = useState(false);
@@ -80,10 +102,11 @@ export function HomeScreen({
     const name = newName.trim();
     if (!name || !user) return;
     try {
-      const id = await createCanvass(campaignId, name, user.uid, newCity.trim(), newState.trim());
+      const id = await createCanvass(campaignId, name, user.uid, newCity.trim(), newState.trim(), newMode);
       setNewName("");
       setNewCity("");
       setNewState("");
+      setNewMode("standard");
       setCreating(false);
       onOpenCanvass(id);
     } catch {
@@ -225,6 +248,13 @@ export function HomeScreen({
               placeholder="Name this canvass (e.g. Elm St loop)"
               className="w-full outline-none text-base mb-2.5"
             />
+            <ModeToggle mode={newMode} onChange={setNewMode} />
+            {newMode === "gotv" && (
+              <div className="text-xs text-gray-400 mb-3 leading-relaxed">
+                GOTV canvasses get a ROUTE tab — every house ordered by proximity into a single
+                walk list, starting from wherever you tell it.
+              </div>
+            )}
             <div className="flex gap-2 mb-3">
               <input
                 value={newCity}
@@ -259,6 +289,7 @@ export function HomeScreen({
                   setNewName("");
                   setNewCity("");
                   setNewState("");
+                  setNewMode("standard");
                 }}
                 className="px-4 py-2.5 border-2 border-black rounded-lg font-bold"
               >
@@ -283,7 +314,14 @@ export function HomeScreen({
                 <ChunkyBox rounded="rounded-xl" offset="translate-x-1 translate-y-1">
                   <div className="px-4 py-3.5 flex items-center justify-between rounded-xl">
                     <div className="min-w-0">
-                      <div className="font-bold truncate">{c.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="font-bold truncate">{c.name}</div>
+                        {c.mode === "gotv" && (
+                          <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-black text-white">
+                            GOTV
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-gray-500 mt-0.5 uppercase tracking-wide">
                         {c.streetCount} street{c.streetCount === 1 ? "" : "s"} · {c.doorCount} door
                         {c.doorCount === 1 ? "" : "s"}
