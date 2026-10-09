@@ -286,6 +286,17 @@ export function CanvassScreen({
     }
   };
 
+  const handleVisitedToggle = async (houseId: string) => {
+    if (!activeStreetId) return;
+    const h = activeHouses.find((x) => x.id === houseId);
+    if (!h) return;
+    try {
+      await updateHouse(campaignId, canvassId, activeStreetId, houseId, { visited: !h.visited });
+    } catch {
+      flashError("Couldn't save. Check your connection.");
+    }
+  };
+
   const confirmDeleteNow = async (password?: string) => {
     if (!confirmDelete) return;
 
@@ -595,6 +606,8 @@ export function CanvassScreen({
                   setConfirmDelete({ type: "house", id, label });
                 }}
                 canDelete={!isGuest}
+                gotv={canvass.mode === "gotv"}
+                onToggleVisited={handleVisitedToggle}
               />
             </div>
             {activeStreet && <AddHouseBar onAdd={handleAddHouses} isCondo={activeStreet.type === "condo"} />}
@@ -618,6 +631,7 @@ export function CanvassScreen({
             streets={streets}
             overlays={overlays}
             selectedWardKey={selectedWardKey}
+            gotv={canvass.mode === "gotv"}
             onUploadOverlay={isGuest ? undefined : handleUploadOverlay}
             onDeleteOverlay={isGuest ? undefined : handleDeleteOverlay}
             canManageOverlays={!isGuest}
