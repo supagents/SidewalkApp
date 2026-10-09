@@ -604,8 +604,8 @@ export function CanvassScreen({
             houses={mapHouses}
             streets={streets}
             loading={loadingMapHouses}
-            onStatusChange={(house, status) =>
-              updateHouse(campaignId, canvassId, house.streetId, house.id, { status }).catch(() =>
+            onToggleVisited={(house, visited) =>
+              updateHouse(campaignId, canvassId, house.streetId, house.id, { visited }).catch(() =>
                 flashError("Couldn't save. Check your connection.")
               )
             }

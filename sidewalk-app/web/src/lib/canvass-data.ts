@@ -264,6 +264,7 @@ export function subscribeHouses(
           status: data.status ?? null,
           lawnSign: !!data.lawnSign,
           revisit: !!data.revisit,
+          visited: !!data.visited,
           notes: data.notes ?? "",
           createdAt: data.createdAt?.toMillis?.() ?? 0,
           address: data.address ?? "",
@@ -340,6 +341,7 @@ export async function addHouses(
       status: null,
       lawnSign: false,
       revisit: false,
+      visited: false,
       notes: "",
       createdAt: serverTimestamp(),
       address: houseAddressFor(street, number, city, state),
@@ -435,6 +437,7 @@ export async function importVoterList(
           status: markAsSupporters ? "support" : null,
           lawnSign: false,
           revisit: false,
+          visited: false,
           notes: h.notes,
           createdAt: serverTimestamp(),
           address: buildHouseAddress(h.number, group.name, h.city || fallbackCity, h.state || fallbackState),
@@ -482,7 +485,7 @@ export async function updateHouse(
   canvassId: string,
   streetId: string,
   houseId: string,
-  patch: Partial<{ number: string; floor: string; status: HouseStatus | null; notes: string }>
+  patch: Partial<{ number: string; floor: string; status: HouseStatus | null; visited: boolean; notes: string }>
 ) {
   await updateDoc(houseRef(campaignId, canvassId, streetId, houseId), patch);
   await updateDoc(canvassRef(campaignId, canvassId), { updatedAt: serverTimestamp() });
@@ -570,6 +573,7 @@ async function fetchCanvassExport(campaignId: string, canvassId: string, name: s
           status: data.status ?? null,
           lawnSign: !!data.lawnSign,
           revisit: !!data.revisit,
+          visited: !!data.visited,
           notes: data.notes ?? "",
           createdAt: data.createdAt?.toMillis?.() ?? 0,
           address: data.address ?? "",
