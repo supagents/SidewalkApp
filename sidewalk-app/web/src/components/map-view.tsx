@@ -15,29 +15,44 @@ import type { House, HouseStatus, Street } from "@/lib/types";
 import { buildWardOptions, findWardOption } from "@/lib/wards";
 
 const NO_STATUS_COLOR = "#D1D5DB"; // matches the pale gray "unlogged" face outline elsewhere in the app
+const LOGGED_COLOR = "#22C55E"; // same green as "support" elsewhere — reused as the one positive signal GOTV mode cares about
 const UNLOGGED = "unlogged";
-type FilterKey = HouseStatus | typeof UNLOGGED;
+const LOGGED = "logged";
+// GOTV canvasses aren't about re-assessing support (see House.visited) — a
+// house is either checked off or it isn't — so this is a parallel, much
+// smaller key space to the regular support/undecided/against/not-home one,
+// not an extension of it.
+type FilterKey = HouseStatus | typeof UNLOGGED | typeof LOGGED;
 const FILTER_KEYS: FilterKey[] = [...STATUS_ORDER, UNLOGGED];
+const GOTV_FILTER_KEYS: FilterKey[] = [LOGGED, UNLOGGED];
 
-function filterColor(key: FilterKey) {
-  return key === UNLOGGED ? NO_STATUS_COLOR : STATUS_COLORS[key];
+function filterColor(key: FilterKey, gotv: boolean) {
+  if (gotv) return key === LOGGED ? LOGGED_COLOR : NO_STATUS_COLOR;
+  return key === UNLOGGED ? NO_STATUS_COLOR : STATUS_COLORS[key as HouseStatus];
 }
-function filterLabel(key: FilterKey) {
-  return key === UNLOGGED ? "Unlogged" : STATUS_LABEL[key];
+function filterLabel(key: FilterKey, gotv: boolean) {
+  if (gotv) return key === LOGGED ? "Logged" : "Unlogged";
+  return key === UNLOGGED ? "Unlogged" : STATUS_LABEL[key as HouseStatus];
+}
+function filterKeyForHouse(h: House, gotv: boolean): FilterKey {
+  return gotv ? (h.visited ? LOGGED : UNLOGGED) : (h.status ?? UNLOGGED);
 }
 
 function MapFilterBar({
+  gotv,
   counts,
   hidden,
   onToggle,
 }: {
+  gotv: boolean;
   counts: Record<FilterKey, number>;
   hidden: Set<FilterKey>;
   onToggle: (key: FilterKey) => void;
 }) {
+  const keys = gotv ? GOTV_FILTER_KEYS : FILTER_KEYS;
   return (
     <div className="flex items-center gap-2 px-4 py-2.5 overflow-x-auto whitespace-nowrap border-b border-gray-200 bg-white flex-shrink-0">
-      {FILTER_KEYS.map((key) => {
+      {keys.map((key) => {
         const active = !hidden.has(key);
         return (
           <button
@@ -50,9 +65,9 @@ function MapFilterBar({
           >
             <span
               className="w-2.5 h-2.5 rounded-full border border-black flex-shrink-0"
-              style={{ background: active ? filterColor(key) : "#E5E7EB", borderColor: active ? "#000" : "#D1D5DB" }}
+              style={{ background: active ? filterColor(key, gotv) : "#E5E7EB", borderColor: active ? "#000" : "#D1D5DB" }}
             />
-            {filterLabel(key)}
+            {filterLabel(key, gotv)}
             <span className={active ? "text-gray-500" : "text-gray-300"}>{counts[key] ?? 0}</span>
           </button>
         );
@@ -69,6 +84,7 @@ function LayersPanel({
   onAddClick,
   canManage,
   onClose,
+  gotv,
 }: {
   overlays: MapOverlay[];
   hiddenIds: Set<string>;
@@ -77,6 +93,7 @@ function LayersPanel({
   onAddClick: () => void;
   canManage: boolean;
   onClose: () => void;
+  gotv: boolean;
 }) {
   return (
     <div className="absolute right-3 top-3 z-[500] w-64 bg-white border-2 border-black rounded-xl overflow-hidden shadow-sm">
@@ -89,7 +106,7 @@ function LayersPanel({
       {overlays.length === 0 ? (
         <div className="px-3.5 py-4 text-xs text-gray-400 text-center leading-relaxed">
           No boundary layers yet — ward, riding, poll, or any other district file. Once one&rsquo;s added, tap a
-          shape on the map to see a supporter breakdown for everyone logged inside it.
+          shape on the map to see a {gotv ? "logged/unlogged" : "supporter"} breakdown for everyone inside it.
         </div>
       ) : (
         <div className="max-h-52 overflow-y-auto divide-y divide-gray-100">
@@ -185,7 +202,7 @@ function condoIcon(unitCount: number) {
 // Same "build a real DOM node, use textContent" safety rule as
 // popupContent above — a condo's name, address, and every unit's number
 // are all user-editable text.
-function condoPopupContent(street: Street, units: House[]): HTMLDivElement {
+function condoPopupContent(street: Street, units: House[], gotv: boolean): HTMLDivElement {
   const container = document.createElement("div");
   container.style.fontFamily = "'Helvetica Neue',Helvetica,Arial,sans-serif";
   container.style.minWidth = "170px";
@@ -211,12 +228,13 @@ function condoPopupContent(street: Street, units: House[]): HTMLDivElement {
   list.style.flexDirection = "column";
   list.style.gap = "4px";
 
-  // One row per status category present, not one row per unit — a
-  // building can have dozens of units, and "how many supporters here"
-  // is the useful question, not a scroll through every individual one
-  // (that detail is still what the LIST tab is for).
-  FILTER_KEYS.forEach((key) => {
-    const count = units.filter((u) => (u.status ?? UNLOGGED) === key).length;
+  // One row per category present, not one row per unit — a building can
+  // have dozens of units, and "how many here" is the useful question, not
+  // a scroll through every individual one (that detail is still what the
+  // LIST tab is for).
+  const keys = gotv ? GOTV_FILTER_KEYS : FILTER_KEYS;
+  keys.forEach((key) => {
+    const count = units.filter((u) => filterKeyForHouse(u, gotv) === key).length;
     if (count === 0) return;
 
     const row = document.createElement("div");
@@ -230,12 +248,12 @@ function condoPopupContent(street: Street, units: House[]): HTMLDivElement {
     dot.style.height = "8px";
     dot.style.borderRadius = "50%";
     dot.style.flexShrink = "0";
-    dot.style.background = filterColor(key);
+    dot.style.background = filterColor(key, gotv);
     dot.style.border = "1px solid #000";
     row.appendChild(dot);
 
     const label = document.createElement("span");
-    label.textContent = `${filterLabel(key)} — ${count}`;
+    label.textContent = `${filterLabel(key, gotv)} — ${count}`;
     row.appendChild(label);
 
     list.appendChild(row);
@@ -252,7 +270,7 @@ function condoPopupContent(street: Street, units: House[]): HTMLDivElement {
 // check against the houses passed in, not something stored anywhere —
 // there's no new field on a house for this, so it stays correct even as
 // houses get added, moved, or re-geocoded after the boundary was uploaded.
-function wardStatsPopupContent(label: string, housesInside: House[]): HTMLDivElement {
+function wardStatsPopupContent(label: string, housesInside: House[], gotv: boolean): HTMLDivElement {
   const container = document.createElement("div");
   container.style.fontFamily = "'Helvetica Neue',Helvetica,Arial,sans-serif";
   container.style.minWidth = "170px";
@@ -285,8 +303,9 @@ function wardStatsPopupContent(label: string, housesInside: House[]): HTMLDivEle
   list.style.flexDirection = "column";
   list.style.gap = "4px";
 
-  FILTER_KEYS.forEach((key) => {
-    const count = housesInside.filter((h) => (h.status ?? UNLOGGED) === key).length;
+  const keys = gotv ? GOTV_FILTER_KEYS : FILTER_KEYS;
+  keys.forEach((key) => {
+    const count = housesInside.filter((h) => filterKeyForHouse(h, gotv) === key).length;
     if (count === 0) return;
 
     const row = document.createElement("div");
@@ -300,12 +319,12 @@ function wardStatsPopupContent(label: string, housesInside: House[]): HTMLDivEle
     dot.style.height = "8px";
     dot.style.borderRadius = "50%";
     dot.style.flexShrink = "0";
-    dot.style.background = filterColor(key);
+    dot.style.background = filterColor(key, gotv);
     dot.style.border = "1px solid #000";
     row.appendChild(dot);
 
     const rowLabel = document.createElement("span");
-    rowLabel.textContent = `${filterLabel(key)} — ${count}`;
+    rowLabel.textContent = `${filterLabel(key, gotv)} — ${count}`;
     row.appendChild(rowLabel);
 
     list.appendChild(row);
@@ -320,6 +339,7 @@ export function MapView({
   streets = [],
   overlays = [],
   selectedWardKey = null,
+  gotv = false,
   onUploadOverlay,
   onDeleteOverlay,
   canManageOverlays = false,
@@ -328,6 +348,7 @@ export function MapView({
   streets?: Street[];
   overlays?: MapOverlay[];
   selectedWardKey?: string | null;
+  gotv?: boolean;
   onUploadOverlay?: (name: string, file: File) => Promise<void>;
   onDeleteOverlay?: (id: string) => void;
   canManageOverlays?: boolean;
@@ -428,10 +449,10 @@ export function MapView({
                 (h) =>
                   h.lat != null &&
                   h.lng != null &&
-                  !hiddenRef.current.has(h.status ?? UNLOGGED) &&
+                  !hiddenRef.current.has(filterKeyForHouse(h, gotv)) &&
                   pointInGeometry(h.lng as number, h.lat as number, feature.geometry)
               );
-              return wardStatsPopupContent(label, inside);
+              return wardStatsPopupContent(label, inside, gotv);
             });
           },
         });
@@ -442,7 +463,7 @@ export function MapView({
       if (shouldShow && !isOnMap) layer.addTo(map);
       if (!shouldShow && isOnMap) map.removeLayer(layer);
     });
-  }, [overlays, hiddenOverlayIds]);
+  }, [overlays, hiddenOverlayIds, gotv]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -454,7 +475,7 @@ export function MapView({
       (h) =>
         h.lat != null &&
         h.lng != null &&
-        !hidden.has(h.status ?? UNLOGGED) &&
+        !hidden.has(filterKeyForHouse(h, gotv)) &&
         (!selectedWard || pointInGeometry(h.lng as number, h.lat as number, selectedWard.geometry))
     );
 
@@ -479,7 +500,7 @@ export function MapView({
     });
 
     const markers: L.Marker[] = regular.map((h) => {
-      const color = h.status ? STATUS_COLORS[h.status] : NO_STATUS_COLOR;
+      const color = gotv ? (h.visited ? LOGGED_COLOR : NO_STATUS_COLOR) : h.status ? STATUS_COLORS[h.status] : NO_STATUS_COLOR;
       return L.marker([h.lat as number, h.lng as number], { icon: pinIcon(color) }).bindPopup(
         popupContent(h.address || h.number)
       );
@@ -490,7 +511,7 @@ export function MapView({
       const first = units[0];
       markers.push(
         L.marker([first.lat as number, first.lng as number], { icon: condoIcon(units.length) }).bindPopup(
-          condoPopupContent(street, units)
+          condoPopupContent(street, units, gotv)
         )
       );
     });
@@ -502,7 +523,7 @@ export function MapView({
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedWard is derived fresh from [overlays, selectedWardKey] every render; depending on those primitives instead of the object avoids rebuilding markers on unrelated re-renders.
-  }, [houses, hidden, streets, overlays, selectedWardKey]);
+  }, [houses, hidden, streets, overlays, selectedWardKey, gotv]);
 
   const allPinned = houses.filter(
     (h) =>
@@ -510,15 +531,16 @@ export function MapView({
       h.lng != null &&
       (!selectedWard || pointInGeometry(h.lng as number, h.lat as number, selectedWard.geometry))
   );
-  const visiblePinned = allPinned.filter((h) => !hidden.has(h.status ?? UNLOGGED));
-  const counts = FILTER_KEYS.reduce((acc, key) => {
-    acc[key] = allPinned.filter((h) => (h.status ?? UNLOGGED) === key).length;
+  const visiblePinned = allPinned.filter((h) => !hidden.has(filterKeyForHouse(h, gotv)));
+  const activeFilterKeys = gotv ? GOTV_FILTER_KEYS : FILTER_KEYS;
+  const counts = activeFilterKeys.reduce((acc, key) => {
+    acc[key] = allPinned.filter((h) => filterKeyForHouse(h, gotv) === key).length;
     return acc;
   }, {} as Record<FilterKey, number>);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <MapFilterBar counts={counts} hidden={hidden} onToggle={toggleFilter} />
+      <MapFilterBar gotv={gotv} counts={counts} hidden={hidden} onToggle={toggleFilter} />
       <div className="relative flex-1 min-h-0">
         <div ref={containerRef} className="absolute inset-0" />
         {visiblePinned.length === 0 && (
@@ -540,6 +562,7 @@ export function MapView({
             onAddClick={() => setUploadModalOpen(true)}
             canManage={canManageOverlays}
             onClose={() => setLayersPanelOpen(false)}
+            gotv={gotv}
           />
         ) : (
           <button

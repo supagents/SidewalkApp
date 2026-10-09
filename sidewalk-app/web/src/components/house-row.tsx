@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Flag, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Flag, X } from "lucide-react";
 import { FaceIcon, LawnSignIcon, NotHomeIcon } from "@/components/status-icons";
 import type { House, HouseStatus } from "@/lib/types";
 
@@ -18,6 +18,8 @@ export function HouseRow({
   onDelete,
   canDelete = true,
   isCondo = false,
+  gotv = false,
+  onToggleVisited,
 }: {
   house: House;
   expanded: boolean;
@@ -31,6 +33,11 @@ export function HouseRow({
   onDelete: () => void;
   canDelete?: boolean;
   isCondo?: boolean;
+  // GOTV canvasses aren't about re-assessing support — see House.visited —
+  // so this swaps the usual support/undecided/against/not-home cluster for
+  // a single checked-off toggle, same as the ROUTE tab's own row.
+  gotv?: boolean;
+  onToggleVisited?: () => void;
 }) {
   const [editingNumber, setEditingNumber] = useState(false);
   const [numberDraft, setNumberDraft] = useState(house.number);
@@ -77,20 +84,33 @@ export function HouseRow({
           </button>
         )}
 
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          <button onClick={() => onStatusChange(house.status === "support" ? null : "support")}>
-            <FaceIcon type="support" active={house.status === "support"} size={20} />
+        {gotv ? (
+          <button
+            onClick={onToggleVisited}
+            title={house.visited ? "Mark not visited" : "Mark visited"}
+            className={
+              "w-8 h-8 flex-shrink-0 rounded-full border-2 border-black flex items-center justify-center " +
+              (house.visited ? "bg-black text-white" : "bg-white text-transparent")
+            }
+          >
+            <Check size={16} strokeWidth={3} />
           </button>
-          <button onClick={() => onStatusChange(house.status === "undecided" ? null : "undecided")}>
-            <FaceIcon type="undecided" active={house.status === "undecided"} size={20} />
-          </button>
-          <button onClick={() => onStatusChange(house.status === "against" ? null : "against")}>
-            <FaceIcon type="against" active={house.status === "against"} size={20} />
-          </button>
-          <button onClick={() => onStatusChange(house.status === "not_home" ? null : "not_home")} title="Not home">
-            <NotHomeIcon active={house.status === "not_home"} size={20} />
-          </button>
-        </div>
+        ) : (
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <button onClick={() => onStatusChange(house.status === "support" ? null : "support")}>
+              <FaceIcon type="support" active={house.status === "support"} size={20} />
+            </button>
+            <button onClick={() => onStatusChange(house.status === "undecided" ? null : "undecided")}>
+              <FaceIcon type="undecided" active={house.status === "undecided"} size={20} />
+            </button>
+            <button onClick={() => onStatusChange(house.status === "against" ? null : "against")}>
+              <FaceIcon type="against" active={house.status === "against"} size={20} />
+            </button>
+            <button onClick={() => onStatusChange(house.status === "not_home" ? null : "not_home")} title="Not home">
+              <NotHomeIcon active={house.status === "not_home"} size={20} />
+            </button>
+          </div>
+        )}
 
         <button onClick={onLawnSignToggle} title="Lawn sign" className="flex-shrink-0 p-0.5">
           <LawnSignIcon active={house.lawnSign} size={17} />
