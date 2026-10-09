@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Crosshair, MapPin, Search } from "lucide-react";
-import { FaceIcon, NotHomeIcon } from "@/components/status-icons";
+import { Check, Crosshair, MapPin, Search } from "lucide-react";
 import { nearestNeighborRoute, type LatLng } from "@/lib/route";
-import type { House, HouseStatus, Street } from "@/lib/types";
+import type { House, Street } from "@/lib/types";
 
 type StartPoint = { label: string; at: LatLng };
 
@@ -111,15 +110,16 @@ function RouteRow({
   house,
   streetName,
   distanceMeters,
-  onStatusChange,
+  visited,
+  onToggle,
 }: {
   index: number;
   house: House;
   streetName: string;
   distanceMeters: number;
-  onStatusChange: (status: HouseStatus | null) => void;
+  visited: boolean;
+  onToggle: () => void;
 }) {
-  const visited = house.status != null;
   return (
     <div className={"bg-white border-2 border-black rounded-xl px-3 py-2.5 flex items-center gap-2.5 " + (visited ? "opacity-50" : "")}>
       <div className="w-7 h-7 rounded-full bg-black text-white flex-shrink-0 flex items-center justify-center font-extrabold text-xs">
@@ -133,20 +133,16 @@ function RouteRow({
           <MapPin size={10} strokeWidth={2.5} /> {formatDistance(distanceMeters)} from last stop
         </div>
       </div>
-      <div className="flex items-center gap-0.5 flex-shrink-0">
-        <button onClick={() => onStatusChange(house.status === "support" ? null : "support")}>
-          <FaceIcon type="support" active={house.status === "support"} size={22} />
-        </button>
-        <button onClick={() => onStatusChange(house.status === "undecided" ? null : "undecided")}>
-          <FaceIcon type="undecided" active={house.status === "undecided"} size={22} />
-        </button>
-        <button onClick={() => onStatusChange(house.status === "against" ? null : "against")}>
-          <FaceIcon type="against" active={house.status === "against"} size={22} />
-        </button>
-        <button onClick={() => onStatusChange(house.status === "not_home" ? null : "not_home")} title="Not home">
-          <NotHomeIcon active={house.status === "not_home"} size={22} />
-        </button>
-      </div>
+      <button
+        onClick={onToggle}
+        title={visited ? "Mark not visited" : "Mark visited"}
+        className={
+          "w-8 h-8 flex-shrink-0 rounded-full border-2 border-black flex items-center justify-center " +
+          (visited ? "bg-black text-white" : "bg-white text-transparent")
+        }
+      >
+        <Check size={18} strokeWidth={3} />
+      </button>
     </div>
   );
 }
@@ -155,14 +151,22 @@ export function GotvChecklist({
   houses,
   streets,
   loading,
-  onStatusChange,
+  onToggleVisited,
 }: {
   houses: House[];
   streets: Street[];
   loading: boolean;
-  onStatusChange: (house: House, status: HouseStatus | null) => void;
+  onToggleVisited: (house: House, visited: boolean) => void;
 }) {
   const [start, setStart] = useState<StartPoint | null>(null);
+  // The canvass-wide house data behind this tab is a one-time fetch, not a
+  // live subscription (see canvass-screen.tsx), so a write made here
+  // wouldn't otherwise be reflected back into `houses` until something
+  // forces a re-fetch — leaving a checked house looking unchecked until a
+  // refresh. These overrides make the checkbox respond immediately,
+  // independent of when (or whether) that happens; the real write still
+  // goes through onToggleVisited so it's not just a visual fake-out.
+  const [visitedOverrides, setVisitedOverrides] = useState<Record<string, boolean>>({});
 
   const streetById = useMemo(() => new Map(streets.map((s) => [s.id, s])), [streets]);
   const geocoded = useMemo(() => houses.filter((h) => h.lat != null && h.lng != null), [houses]);
@@ -227,16 +231,24 @@ export function GotvChecklist({
               geocode.
             </div>
           )}
-          {route.map((stop, i) => (
-            <RouteRow
-              key={stop.item.id}
-              index={i}
-              house={stop.item}
-              streetName={streetById.get(stop.item.streetId)?.name ?? ""}
-              distanceMeters={stop.distanceFromPreviousMeters}
-              onStatusChange={(status) => onStatusChange(stop.item, status)}
-            />
-          ))}
+          {route.map((stop, i) => {
+            const visited = visitedOverrides[stop.item.id] ?? stop.item.visited;
+            return (
+              <RouteRow
+                key={stop.item.id}
+                index={i}
+                house={stop.item}
+                streetName={streetById.get(stop.item.streetId)?.name ?? ""}
+                distanceMeters={stop.distanceFromPreviousMeters}
+                visited={visited}
+                onToggle={() => {
+                  const next = !visited;
+                  setVisitedOverrides((prev) => ({ ...prev, [stop.item.id]: next }));
+                  onToggleVisited(stop.item, next);
+                }}
+              />
+            );
+          })}
         </>
       )}
     </div>

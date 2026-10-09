@@ -8,6 +8,11 @@ export type House = {
   status: HouseStatus | null;
   lawnSign: boolean;
   revisit: boolean;
+  // Checked off in GOTV mode (see gotv-checklist.tsx) — deliberately separate
+  // from `status`: GOTV day-of is about confirming you reached a known
+  // supporter, not re-assessing their support, so it doesn't touch or get
+  // touched by the support/undecided/against/not-home taxonomy at all.
+  visited: boolean;
   notes: string;
   createdAt: number;
   address: string;
