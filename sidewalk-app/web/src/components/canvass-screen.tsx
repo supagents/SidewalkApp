@@ -26,7 +26,7 @@ import {
 } from "@/lib/canvass-data";
 import { downloadCanvassCSV, type ExportCategory } from "@/lib/csv";
 import type { ParsedImport } from "@/lib/voter-import";
-import { deleteMapOverlay, subscribeMapOverlays, uploadMapOverlay, type MapOverlay } from "@/lib/map-overlays";
+import { deleteMapOverlay, subscribeMapOverlays, updateMapOverlayColor, uploadMapOverlay, type MapOverlay } from "@/lib/map-overlays";
 import { pointInGeometry } from "@/lib/geo";
 import { buildWardOptions, findWardOption } from "@/lib/wards";
 import type { Actor, Canvass, House, HouseStatus, Street, StreetType } from "@/lib/types";
@@ -414,6 +414,10 @@ export function CanvassScreen({
     deleteMapOverlay(campaignId, canvassId, id).catch(() => flashError("Couldn't delete that layer."));
   };
 
+  const handleOverlayColorChange = (id: string, color: string) => {
+    updateMapOverlayColor(campaignId, canvassId, id, color).catch(() => flashError("Couldn't change that layer's color."));
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="px-4 pt-6 pb-3 flex items-center gap-3">
@@ -679,6 +683,7 @@ export function CanvassScreen({
             gotv={canvass.mode === "gotv"}
             onUploadOverlay={isGuest ? undefined : handleUploadOverlay}
             onDeleteOverlay={isGuest ? undefined : handleDeleteOverlay}
+            onOverlayColorChange={isGuest ? undefined : handleOverlayColorChange}
             canManageOverlays={!isGuest}
           />
         )}

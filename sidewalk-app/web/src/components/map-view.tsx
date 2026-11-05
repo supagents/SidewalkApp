@@ -10,7 +10,7 @@ import { Layers, Plus, Trash2 } from "lucide-react";
 import { STATUS_COLORS, STATUS_LABEL, STATUS_ORDER } from "@/components/status-icons";
 import { UploadOverlayModal } from "@/components/upload-overlay-modal";
 import { pointInGeometry } from "@/lib/geo";
-import type { MapOverlay } from "@/lib/map-overlays";
+import { OVERLAY_COLORS, type MapOverlay } from "@/lib/map-overlays";
 import type { House, HouseStatus, Street } from "@/lib/types";
 import { buildWardOptions, findWardOption } from "@/lib/wards";
 
@@ -81,6 +81,7 @@ function LayersPanel({
   hiddenIds,
   onToggle,
   onDelete,
+  onColorChange,
   onAddClick,
   canManage,
   onClose,
@@ -90,11 +91,13 @@ function LayersPanel({
   hiddenIds: Set<string>;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
+  onColorChange?: (id: string, color: string) => void;
   onAddClick: () => void;
   canManage: boolean;
   onClose: () => void;
   gotv: boolean;
 }) {
+  const [pickerOpenId, setPickerOpenId] = useState<string | null>(null);
   return (
     <div className="absolute right-3 top-3 z-[500] w-64 bg-white border-2 border-black rounded-xl overflow-hidden shadow-sm">
       <div className="px-3.5 py-2.5 border-b border-gray-200 flex items-center justify-between">
@@ -112,19 +115,56 @@ function LayersPanel({
         <div className="max-h-52 overflow-y-auto divide-y divide-gray-100">
           {overlays.map((o) => {
             const active = !hiddenIds.has(o.id);
+            const pickerOpen = pickerOpenId === o.id;
             return (
-              <div key={o.id} className="flex items-center gap-2 px-3.5 py-2.5">
-                <button onClick={() => onToggle(o.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-                  <span
-                    className="w-3 h-3 rounded-sm border border-black flex-shrink-0"
-                    style={{ background: active ? o.color : "#E5E7EB", borderColor: active ? "#000" : "#D1D5DB" }}
-                  />
-                  <span className={"text-sm font-semibold truncate " + (active ? "text-black" : "text-gray-400")}>{o.name}</span>
-                </button>
-                {canManage && (
-                  <button onClick={() => onDelete(o.id)} className="text-gray-300 flex-shrink-0">
-                    <Trash2 size={14} />
+              <div key={o.id}>
+                <div className="flex items-center gap-2 px-3.5 py-2.5">
+                  {canManage && onColorChange ? (
+                    <button
+                      onClick={() => setPickerOpenId(pickerOpen ? null : o.id)}
+                      title="Change color"
+                      className="flex-shrink-0"
+                    >
+                      <span
+                        className="w-3 h-3 rounded-sm border flex-shrink-0 block"
+                        style={{ background: active ? o.color : "#E5E7EB", borderColor: active ? "#000" : "#D1D5DB" }}
+                      />
+                    </button>
+                  ) : (
+                    <span
+                      className="w-3 h-3 rounded-sm border flex-shrink-0"
+                      style={{ background: active ? o.color : "#E5E7EB", borderColor: active ? "#000" : "#D1D5DB" }}
+                    />
+                  )}
+                  <button onClick={() => onToggle(o.id)} className="flex-1 min-w-0 text-left">
+                    <span className={"text-sm font-semibold truncate " + (active ? "text-black" : "text-gray-400")}>
+                      {o.name}
+                    </span>
                   </button>
+                  {canManage && (
+                    <button onClick={() => onDelete(o.id)} className="text-gray-300 flex-shrink-0">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+                {pickerOpen && onColorChange && (
+                  <div className="flex items-center gap-1.5 px-3.5 pb-2.5 flex-wrap">
+                    {OVERLAY_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          onColorChange(o.id, c);
+                          setPickerOpenId(null);
+                        }}
+                        title={c}
+                        className="w-5 h-5 rounded-full flex-shrink-0"
+                        style={{
+                          background: c,
+                          boxShadow: c === o.color ? "0 0 0 2px #fff, 0 0 0 4px #000" : "0 0 0 1px rgba(0,0,0,0.15)",
+                        }}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
             );
@@ -342,6 +382,7 @@ export function MapView({
   gotv = false,
   onUploadOverlay,
   onDeleteOverlay,
+  onOverlayColorChange,
   canManageOverlays = false,
 }: {
   houses: House[];
@@ -351,6 +392,7 @@ export function MapView({
   gotv?: boolean;
   onUploadOverlay?: (name: string, file: File) => Promise<void>;
   onDeleteOverlay?: (id: string) => void;
+  onOverlayColorChange?: (id: string, color: string) => void;
   canManageOverlays?: boolean;
 }) {
   // Recomputed from `overlays` each render rather than memoized — overlay
@@ -559,6 +601,7 @@ export function MapView({
             hiddenIds={hiddenOverlayIds}
             onToggle={toggleOverlay}
             onDelete={(id) => onDeleteOverlay?.(id)}
+            onColorChange={onOverlayColorChange}
             onAddClick={() => setUploadModalOpen(true)}
             canManage={canManageOverlays}
             onClose={() => setLayersPanelOpen(false)}
