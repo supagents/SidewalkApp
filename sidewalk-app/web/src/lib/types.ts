@@ -1,5 +1,52 @@
 export type HouseStatus = "support" | "undecided" | "against" | "not_home";
 
+// The four fields that get an append-only event logged against them when
+// changed — see HouseEvent. Deliberately excludes number/floor/notes: those
+// are data corrections, not canvassing-activity events (see updateHouse in
+// canvass-data.ts).
+export type HouseEventField = "status" | "visited" | "lawnSign" | "revisit";
+
+// Assembled once per session (canvass-screen.tsx) from either the signed-in
+// member (useAuth()) or the guest's localStorage session
+// (getStoredGuestSession(), via the isGuest prop) and threaded into every
+// canvassing-activity write. Guests have no server-readable profile doc
+// (sidewalk-firestore.rules: /guests/{uid} is read/write: false, written
+// only by the joinCanvassByCode Cloud Function), so `name` has to be
+// carried in by the caller at write time rather than resolved later by uid.
+export type Actor = {
+  uid: string;
+  name: string;
+  type: "member" | "guest";
+};
+
+// One doc per meaningful change to a canvassing-activity field — written to
+// .../houses/{houseId}/events/{eventId}, in the same batch as the House
+// field write itself (see canvass-data.ts). Append-only: Firestore rules
+// allow create only, never update/delete, even for a manager.
+//
+// campaignId/canvassId/streetId/houseId are carried as real fields, not
+// just implied by the document's path — a future collection-group query
+// across every events subcollection (e.g. "everything this volunteer
+// logged today, campaign-wide") needs them queryable; nothing here builds
+// that query yet, this just keeps the schema from blocking it later.
+export type HouseEvent = {
+  id: string;
+  campaignId: string;
+  canvassId: string;
+  streetId: string;
+  houseId: string;
+  field: HouseEventField;
+  // Same representation as on House itself (HouseStatus|null for "status",
+  // boolean for the other three) — stored loosely as unknown on the wire
+  // rather than widening this type per-field.
+  oldValue: unknown;
+  newValue: unknown;
+  actorUid: string;
+  actorName: string;
+  actorType: "member" | "guest";
+  createdAt: number;
+};
+
 export type House = {
   id: string;
   streetId: string;
@@ -14,6 +61,13 @@ export type House = {
   // touched by the support/undecided/against/not-home taxonomy at all.
   visited: boolean;
   notes: string;
+  // Denormalized from the most recent logged event (see canvass-data.ts)
+  // so a house row can show "Last updated by X · 2h ago" with zero extra
+  // reads. Both null until the first status/visited/lawnSign/revisit change
+  // ever logged on this house — never backfilled for houses that predate
+  // this feature.
+  lastTouchedBy: string | null;
+  lastTouchedAt: number | null;
   createdAt: number;
   address: string;
   lat: number | null;

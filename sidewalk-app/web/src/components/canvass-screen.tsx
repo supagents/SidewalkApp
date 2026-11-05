@@ -19,20 +19,23 @@ import {
   subscribeStreets,
   toggleHouseLawnSign,
   toggleHouseRevisit,
+  toggleHouseVisited,
   updateCanvassLocation,
   updateHouse,
+  updateHouseStatus,
 } from "@/lib/canvass-data";
 import { downloadCanvassCSV, type ExportCategory } from "@/lib/csv";
 import type { ParsedImport } from "@/lib/voter-import";
 import { deleteMapOverlay, subscribeMapOverlays, uploadMapOverlay, type MapOverlay } from "@/lib/map-overlays";
 import { pointInGeometry } from "@/lib/geo";
 import { buildWardOptions, findWardOption } from "@/lib/wards";
-import type { Canvass, House, Street, StreetType } from "@/lib/types";
+import type { Actor, Canvass, House, HouseStatus, Street, StreetType } from "@/lib/types";
 import { StreetNav } from "@/components/street-nav";
 import { HouseList } from "@/components/house-list";
 import { GotvChecklist } from "@/components/gotv-checklist";
 import { AddHouseBar } from "@/components/add-house-bar";
 import { ConfirmDeleteModal, type ConfirmDeleteTarget } from "@/components/confirm-delete-modal";
+import { HouseHistoryModal } from "@/components/house-history-modal";
 import { ImportCSVModal } from "@/components/import-csv-modal";
 import { LoadingScreen } from "@/components/loading-screen";
 import { StatsBar } from "@/components/stats-bar";
@@ -41,7 +44,7 @@ import { ExportMenu } from "@/components/export-menu";
 import { Toast } from "@/components/toast";
 import { authErrorMessage, logOut, reauthenticate } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
-import { clearGuestSession } from "@/lib/share";
+import { clearGuestSession, getStoredGuestSession } from "@/lib/share";
 
 // Leaflet needs `window` and touches the DOM directly, so it can never
 // run during SSR — and loading it only via this dynamic import means
@@ -92,6 +95,25 @@ export function CanvassScreen({
   const [importOpen, setImportOpen] = useState(false);
   const [overlays, setOverlays] = useState<MapOverlay[]>([]);
   const [selectedWardKey, setSelectedWardKey] = useState<string | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<string | null>(null);
+
+  // Assembled once and threaded into every canvassing-activity write
+  // (status/visited/lawnSign/revisit) so the written actorName/
+  // lastTouchedBy is never looked up later by uid — guests have no
+  // server-readable profile doc (see sidewalk-firestore.rules'
+  // /guests/{uid}: read/write: false), so their chosen display name can
+  // only ever come from the localStorage session they joined with. A
+  // guest is still signed in anonymously, so user.uid is the real,
+  // rules-matching uid even in the guest branch — only name/type come
+  // from the stored session.
+  const actor: Actor | null = isGuest
+    ? (() => {
+        const session = getStoredGuestSession();
+        return session ? { uid: user?.uid ?? "", name: session.displayName, type: "guest" as const } : null;
+      })()
+    : user
+      ? { uid: user.uid, name: user.displayName || user.email?.split("@")[0] || "A team member", type: "member" as const }
+      : null;
 
   const flashError = (msg: string) => {
     setError(msg);
@@ -255,7 +277,7 @@ export function CanvassScreen({
     }
   };
 
-  const updateActiveHouse = async (houseId: string, patch: Partial<House>) => {
+  const updateActiveHouse = async (houseId: string, patch: Partial<{ number: string; floor: string; notes: string }>) => {
     if (!activeStreetId) return;
     try {
       await updateHouse(campaignId, canvassId, activeStreetId, houseId, patch);
@@ -264,34 +286,60 @@ export function CanvassScreen({
     }
   };
 
-  const handleRevisitToggle = async (houseId: string) => {
-    if (!activeStreetId) return;
+  const handleStatusChange = async (houseId: string, newStatus: HouseStatus | null) => {
+    if (!activeStreetId || !actor) return;
     const h = activeHouses.find((x) => x.id === houseId);
     if (!h) return;
     try {
-      await toggleHouseRevisit(campaignId, canvassId, activeStreetId, houseId, !h.revisit);
+      await updateHouseStatus(campaignId, canvassId, activeStreetId, houseId, h.status, newStatus, actor);
+    } catch {
+      flashError("Couldn't save. Check your connection.");
+    }
+  };
+
+  const handleRevisitToggle = async (houseId: string) => {
+    if (!activeStreetId || !actor) return;
+    const h = activeHouses.find((x) => x.id === houseId);
+    if (!h) return;
+    try {
+      await toggleHouseRevisit(campaignId, canvassId, activeStreetId, houseId, !h.revisit, actor);
     } catch {
       flashError("Couldn't save. Check your connection.");
     }
   };
 
   const handleLawnSignToggle = async (houseId: string) => {
-    if (!activeStreetId) return;
+    if (!activeStreetId || !actor) return;
     const h = activeHouses.find((x) => x.id === houseId);
     if (!h) return;
     try {
-      await toggleHouseLawnSign(campaignId, canvassId, activeStreetId, houseId, !h.lawnSign);
+      await toggleHouseLawnSign(campaignId, canvassId, activeStreetId, houseId, !h.lawnSign, actor);
     } catch {
       flashError("Couldn't save. Check your connection.");
     }
   };
 
   const handleVisitedToggle = async (houseId: string) => {
-    if (!activeStreetId) return;
+    if (!activeStreetId || !actor) return;
     const h = activeHouses.find((x) => x.id === houseId);
     if (!h) return;
     try {
-      await updateHouse(campaignId, canvassId, activeStreetId, houseId, { visited: !h.visited });
+      await toggleHouseVisited(campaignId, canvassId, activeStreetId, houseId, !h.visited, actor);
+    } catch {
+      flashError("Couldn't save. Check your connection.");
+    }
+  };
+
+  // The ROUTE tab's GotvChecklist draws houses from mapHouses (canvass-
+  // wide), not activeHouses (scoped to activeStreetId) — handleVisitedToggle
+  // above would silently no-op whenever a route house's street isn't the
+  // currently-active LIST-tab street, since its activeHouses.find(...)
+  // lookup would come up empty. This takes the full House object
+  // GotvChecklist already has instead of doing that lookup.
+  const handleRouteVisitedToggle = async (house: House, visited: boolean) => {
+    if (!actor) return;
+    try {
+      await toggleHouseVisited(campaignId, canvassId, house.streetId, house.id, visited, actor);
     } catch {
       flashError("Couldn't save. Check your connection.");
     }
@@ -594,7 +642,7 @@ export function CanvassScreen({
                 houses={activeHouses}
                 expandedHouseId={expandedHouseId}
                 onToggleExpand={(id) => setExpandedHouseId((cur) => (cur === id ? null : id))}
-                onStatusChange={(id, status) => updateActiveHouse(id, { status })}
+                onStatusChange={handleStatusChange}
                 onLawnSignToggle={handleLawnSignToggle}
                 onRevisitToggle={handleRevisitToggle}
                 onNumberChange={(id, number) => updateActiveHouse(id, { number })}
@@ -608,6 +656,7 @@ export function CanvassScreen({
                 canDelete={!isGuest}
                 gotv={canvass.mode === "gotv"}
                 onToggleVisited={handleVisitedToggle}
+                onViewHistory={(id) => setHistoryTarget(id)}
               />
             </div>
             {activeStreet && <AddHouseBar onAdd={handleAddHouses} isCondo={activeStreet.type === "condo"} />}
@@ -617,11 +666,7 @@ export function CanvassScreen({
             houses={mapHouses}
             streets={streets}
             loading={loadingMapHouses}
-            onToggleVisited={(house, visited) =>
-              updateHouse(campaignId, canvassId, house.streetId, house.id, { visited }).catch(() =>
-                flashError("Couldn't save. Check your connection.")
-              )
-            }
+            onToggleVisited={handleRouteVisitedToggle}
           />
         ) : loadingMapHouses ? (
           <LoadingScreen />
@@ -644,6 +689,16 @@ export function CanvassScreen({
       )}
       {importOpen && (
         <ImportCSVModal streets={streets} onCancel={() => setImportOpen(false)} onImport={handleImportVoterList} />
+      )}
+      {historyTarget && activeStreetId && (
+        <HouseHistoryModal
+          campaignId={campaignId}
+          canvassId={canvassId}
+          streetId={activeStreetId}
+          houseId={historyTarget}
+          houseLabel={activeHouses.find((h) => h.id === historyTarget)?.number ?? ""}
+          onClose={() => setHistoryTarget(null)}
+        />
       )}
       <Toast message={error} />
     </div>

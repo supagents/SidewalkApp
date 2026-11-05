@@ -20,6 +20,7 @@ export function HouseList({
   canDelete = true,
   gotv = false,
   onToggleVisited,
+  onViewHistory,
 }: {
   street: Street | null;
   houses: House[];
@@ -35,6 +36,7 @@ export function HouseList({
   canDelete?: boolean;
   gotv?: boolean;
   onToggleVisited?: (houseId: string) => void;
+  onViewHistory?: (houseId: string) => void;
 }) {
   const [showRevisitsOnly, setShowRevisitsOnly] = useState(false);
   const [sortNumerically, setSortNumerically] = useState(false);
@@ -112,6 +114,7 @@ export function HouseList({
             isCondo={isCondo}
             gotv={gotv}
             onToggleVisited={() => onToggleVisited?.(h.id)}
+            onViewHistory={onViewHistory ? () => onViewHistory(h.id) : undefined}
           />
         ))}
       </div>

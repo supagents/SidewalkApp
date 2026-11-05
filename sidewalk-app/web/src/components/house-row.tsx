@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, ChevronDown, ChevronUp, Flag, X } from "lucide-react";
 import { FaceIcon, LawnSignIcon, NotHomeIcon } from "@/components/status-icons";
+import { formatRelativeTime } from "@/lib/time";
 import type { House, HouseStatus } from "@/lib/types";
 
 export function HouseRow({
@@ -20,6 +21,7 @@ export function HouseRow({
   isCondo = false,
   gotv = false,
   onToggleVisited,
+  onViewHistory,
 }: {
   house: House;
   expanded: boolean;
@@ -38,6 +40,7 @@ export function HouseRow({
   // a single checked-off toggle, same as the ROUTE tab's own row.
   gotv?: boolean;
   onToggleVisited?: () => void;
+  onViewHistory?: () => void;
 }) {
   const [editingNumber, setEditingNumber] = useState(false);
   const [numberDraft, setNumberDraft] = useState(house.number);
@@ -137,6 +140,19 @@ export function HouseRow({
 
       {expanded && (
         <div className="px-3 pb-3 pt-0.5 border-t border-gray-100">
+          {house.lastTouchedAt != null && (
+            <div className="flex items-center justify-between gap-2 text-xs text-gray-400 mt-2">
+              <span className="truncate">
+                Last updated by <span className="font-semibold text-gray-600">{house.lastTouchedBy ?? "someone"}</span> ·{" "}
+                {formatRelativeTime(house.lastTouchedAt)}
+              </span>
+              {onViewHistory && (
+                <button onClick={onViewHistory} className="font-bold underline underline-offset-2 flex-shrink-0">
+                  History
+                </button>
+              )}
+            </div>
+          )}
           {isCondo && (
             <input
               value={floorDraft}
