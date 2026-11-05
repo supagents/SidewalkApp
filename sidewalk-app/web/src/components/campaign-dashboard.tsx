@@ -83,7 +83,7 @@ function AreaList({ areas, emptyText }: { areas: TargetArea[]; emptyText: string
         <div key={i} className="flex items-center justify-between gap-2 text-sm">
           <span className="font-semibold truncate">{a.label}</span>
           <span className="text-gray-500 text-xs flex-shrink-0">
-            {a.count} door{a.count === 1 ? "" : "s"}
+            {a.count}/{a.total} door{a.total === 1 ? "" : "s"} ({Math.round((a.count / a.total) * 100)}%)
           </span>
         </div>
       ))}

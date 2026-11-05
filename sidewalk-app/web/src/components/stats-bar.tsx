@@ -16,7 +16,7 @@ function computeStats(houses: House[]) {
 }
 
 export function StatsBar({ houses, label }: { houses: House[]; label: string }) {
-  const { total, counts, lawnSign, revisit } = computeStats(houses);
+  const { total, logged, counts, lawnSign, revisit } = computeStats(houses);
   if (total === 0) {
     return <div className="text-xs text-gray-400 text-center py-4">No houses logged here yet.</div>;
   }
@@ -45,6 +45,11 @@ export function StatsBar({ houses, label }: { houses: House[]; label: string }) 
             </span>
           </div>
         ))}
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 border border-gray-300 bg-gray-100" />
+          <span className="font-bold">{total - logged}</span>
+          <span className="text-gray-500">Unlogged ({pct(total - logged)}%)</span>
+        </div>
         <div className="flex items-center gap-1.5 text-xs">
           <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 border-2 border-black bg-white" />
           <span className="font-bold">{lawnSign}</span>
