@@ -12,6 +12,7 @@
     "@tmcw/togeojson": "^7.1.2",
     "@types/shpjs": "^3.4.7",
     "firebase": "^12.17.1",
+    "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
     "lucide-react": "^1.33.0",
