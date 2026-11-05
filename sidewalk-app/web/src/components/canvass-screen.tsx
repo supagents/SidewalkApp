@@ -677,8 +677,6 @@ export function CanvassScreen({
             overlays={overlays}
             selectedWardKey={selectedWardKey}
             gotv={canvass.mode === "gotv"}
-            canvassName={canvass.name}
-            location={[canvass.city, canvass.state].filter(Boolean).join(", ")}
             onUploadOverlay={isGuest ? undefined : handleUploadOverlay}
             onDeleteOverlay={isGuest ? undefined : handleDeleteOverlay}
             canManageOverlays={!isGuest}
