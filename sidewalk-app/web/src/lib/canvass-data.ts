@@ -1,5 +1,6 @@
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   type DocumentReference,
@@ -11,6 +12,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
   type WriteBatch,
 } from "firebase/firestore";
@@ -749,6 +751,80 @@ export async function exportAllCanvasses(campaignId: string, canvasses: Canvass[
 export async function fetchCanvassHouses(campaignId: string, canvassId: string): Promise<House[]> {
   const data = await fetchCanvassExport(campaignId, canvassId, "");
   return data.streets.flatMap((s) => s.houses);
+}
+
+// Every geocoded (and ungeocoded) house across every canvass in a
+// campaign — the campaign-wide counterpart to fetchCanvassHouses, used by
+// the campaign dashboard (see campaign-dashboard.tsx) for both the
+// existing status rollup and the targeting algorithm (lib/targeting.ts).
+// One-time reads in parallel, not a live subscription — same tradeoff as
+// every other "whole campaign" view in this app.
+export async function fetchCampaignHouses(campaignId: string, canvassIds: string[]): Promise<House[]> {
+  const perCanvass = await Promise.all(canvassIds.map((id) => fetchCanvassHouses(campaignId, id)));
+  return perCanvass.flat();
+}
+
+// Every street across every canvass in a campaign — a one-time
+// counterpart to subscribeStreets, used alongside fetchCampaignHouses so
+// the targeting algorithm (lib/targeting.ts) can label a cluster by street
+// name. House.streetId is only unique within its own canvass, not
+// campaign-wide, but that's fine here: each House is only ever looked up
+// against the Street list by its own id, never cross-canvass.
+export async function fetchCampaignStreets(campaignId: string, canvassIds: string[]): Promise<Street[]> {
+  const perCanvass = await Promise.all(
+    canvassIds.map(async (canvassId) => {
+      const snap = await getDocs(query(streetsCol(campaignId, canvassId), orderBy("position", "asc")));
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.name,
+          type: (data.type as StreetType) ?? "street",
+          address: data.address ?? undefined,
+          position: data.position ?? 0,
+          houseCount: data.houseCount ?? 0,
+          revisitCount: data.revisitCount ?? 0,
+          lawnSignCount: data.lawnSignCount ?? 0,
+        };
+      });
+    })
+  );
+  return perCanvass.flat();
+}
+
+// Every canvassing-activity event across every canvass in a campaign —
+// a collection-group query across all .../houses/{houseId}/events
+// subcollections, filtered to this one campaign. This is exactly why
+// HouseEvent carries its own campaignId/canvassId fields rather than
+// relying purely on its document path (see the comment on HouseEvent in
+// lib/types.ts) — a collection-group query has no other way to scope
+// itself to one campaign. Security rules apply per-matched-document using
+// that document's own path variables, so this naturally only returns
+// events from canvasses the caller actually has access to (every canvass
+// in the campaign for a member; only their one canvass for a guest).
+// Needs a Firestore composite index (campaignId + createdAt, collection
+// group scope) — see firestore.indexes.json; this fails with a
+// permission/index error in a project that hasn't deployed it yet.
+export async function fetchCampaignEvents(campaignId: string): Promise<HouseEvent[]> {
+  const q = query(collectionGroup(db, "events"), where("campaignId", "==", campaignId), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      campaignId: data.campaignId,
+      canvassId: data.canvassId,
+      streetId: data.streetId,
+      houseId: data.houseId,
+      field: data.field,
+      oldValue: data.oldValue,
+      newValue: data.newValue,
+      actorUid: data.actorUid,
+      actorName: data.actorName,
+      actorType: data.actorType,
+      createdAt: data.createdAt?.toMillis?.() ?? 0,
+    };
+  });
 }
 
 export function subscribeCanvass(campaignId: string, canvassId: string, cb: (canvass: Canvass | null) => void) {
