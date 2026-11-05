@@ -129,7 +129,12 @@ export function CampaignDashboard({
   const [houses, setHouses] = useState<House[] | null>(null);
   const [streets, setStreets] = useState<Street[]>([]);
   const [events, setEvents] = useState<HouseEvent[] | null>(null);
-  const [eventsUnavailable, setEventsUnavailable] = useState(false);
+  // "index" specifically means Firestore rejected the query for lacking
+  // the composite index (firestore.indexes.json) — the one case with a
+  // known fix (deploy the index) worth naming in the UI. Anything else
+  // (permissions, network, a real bug) gets a generic message instead of
+  // blaming the index when it might already be fine — see the catch below.
+  const [eventsError, setEventsError] = useState<"index" | "other" | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Keyed on the set of canvass IDs (not the `canvasses` array itself,
@@ -147,18 +152,18 @@ export function CampaignDashboard({
     Promise.resolve().then(async () => {
       if (cancelled) return;
       setLoading(true);
-      setEventsUnavailable(false);
+      setEventsError(null);
       try {
         const [h, s, e] = await Promise.all([
           fetchCampaignHouses(campaignId, ids),
           fetchCampaignStreets(campaignId, ids),
-          // Most likely failure here: the composite collection-group
-          // index this query needs (see firestore.indexes.json) hasn't
-          // been deployed to this Firebase project yet. Fail soft — the
-          // rest of the dashboard doesn't depend on events, so it still
-          // renders.
-          fetchCampaignEvents(campaignId).catch(() => {
-            if (!cancelled) setEventsUnavailable(true);
+          // Fail soft — the rest of the dashboard doesn't depend on
+          // events, so it still renders. Logged to the console (not just
+          // swallowed) so a real bug here doesn't masquerade as "index
+          // not deployed" forever once the index actually is deployed.
+          fetchCampaignEvents(campaignId).catch((err) => {
+            console.error("fetchCampaignEvents failed:", err);
+            if (!cancelled) setEventsError(err?.code === "failed-precondition" ? "index" : "other");
             return [] as HouseEvent[];
           }),
         ]);
@@ -196,10 +201,19 @@ export function CampaignDashboard({
         <StatsBar houses={houses} label={campaignName} />
       </div>
 
-      {eventsUnavailable ? (
+      {eventsError ? (
         <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
-          Activity trend and the volunteer leaderboard aren&rsquo;t available yet — this needs a Firestore index
-          that hasn&rsquo;t been deployed. Everything below still works.
+          {eventsError === "index" ? (
+            <>
+              Activity trend and the volunteer leaderboard aren&rsquo;t available yet — this needs a Firestore index
+              that hasn&rsquo;t been deployed. Everything below still works.
+            </>
+          ) : (
+            <>
+              Activity trend and the volunteer leaderboard couldn&rsquo;t load right now — check your connection and
+              try reloading. Everything below still works.
+            </>
+          )}
         </div>
       ) : (
         <>
