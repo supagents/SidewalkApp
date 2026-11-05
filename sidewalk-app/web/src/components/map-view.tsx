@@ -6,37 +6,21 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
-import { Layers, Plus, Trash2 } from "lucide-react";
-import { STATUS_COLORS, STATUS_LABEL, STATUS_ORDER } from "@/components/status-icons";
+import { ImageDown, Layers, Plus, Trash2 } from "lucide-react";
+import { MapExportModal } from "@/components/map-export-modal";
 import { UploadOverlayModal } from "@/components/upload-overlay-modal";
 import { pointInGeometry } from "@/lib/geo";
+import {
+  FILTER_KEYS,
+  GOTV_FILTER_KEYS,
+  filterColor,
+  filterKeyForHouse,
+  filterLabel,
+  type FilterKey,
+} from "@/lib/house-filters";
 import type { MapOverlay } from "@/lib/map-overlays";
-import type { House, HouseStatus, Street } from "@/lib/types";
+import type { House, Street } from "@/lib/types";
 import { buildWardOptions, findWardOption } from "@/lib/wards";
-
-const NO_STATUS_COLOR = "#D1D5DB"; // matches the pale gray "unlogged" face outline elsewhere in the app
-const LOGGED_COLOR = "#22C55E"; // same green as "support" elsewhere — reused as the one positive signal GOTV mode cares about
-const UNLOGGED = "unlogged";
-const LOGGED = "logged";
-// GOTV canvasses aren't about re-assessing support (see House.visited) — a
-// house is either checked off or it isn't — so this is a parallel, much
-// smaller key space to the regular support/undecided/against/not-home one,
-// not an extension of it.
-type FilterKey = HouseStatus | typeof UNLOGGED | typeof LOGGED;
-const FILTER_KEYS: FilterKey[] = [...STATUS_ORDER, UNLOGGED];
-const GOTV_FILTER_KEYS: FilterKey[] = [LOGGED, UNLOGGED];
-
-function filterColor(key: FilterKey, gotv: boolean) {
-  if (gotv) return key === LOGGED ? LOGGED_COLOR : NO_STATUS_COLOR;
-  return key === UNLOGGED ? NO_STATUS_COLOR : STATUS_COLORS[key as HouseStatus];
-}
-function filterLabel(key: FilterKey, gotv: boolean) {
-  if (gotv) return key === LOGGED ? "Logged" : "Unlogged";
-  return key === UNLOGGED ? "Unlogged" : STATUS_LABEL[key as HouseStatus];
-}
-function filterKeyForHouse(h: House, gotv: boolean): FilterKey {
-  return gotv ? (h.visited ? LOGGED : UNLOGGED) : (h.status ?? UNLOGGED);
-}
 
 function MapFilterBar({
   gotv,
@@ -340,6 +324,8 @@ export function MapView({
   overlays = [],
   selectedWardKey = null,
   gotv = false,
+  canvassName,
+  location = "",
   onUploadOverlay,
   onDeleteOverlay,
   canManageOverlays = false,
@@ -349,6 +335,8 @@ export function MapView({
   overlays?: MapOverlay[];
   selectedWardKey?: string | null;
   gotv?: boolean;
+  canvassName: string;
+  location?: string;
   onUploadOverlay?: (name: string, file: File) => Promise<void>;
   onDeleteOverlay?: (id: string) => void;
   canManageOverlays?: boolean;
@@ -366,6 +354,7 @@ export function MapView({
   const [hiddenOverlayIds, setHiddenOverlayIds] = useState<Set<string>>(new Set());
   const [layersPanelOpen, setLayersPanelOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   // Read by the ward-boundary popup below, which is bound once per
   // shape (not rebuilt on every house update — see the overlay effect's
   // own comment on why) but needs the CURRENT houses/filter state at
@@ -500,7 +489,7 @@ export function MapView({
     });
 
     const markers: L.Marker[] = regular.map((h) => {
-      const color = gotv ? (h.visited ? LOGGED_COLOR : NO_STATUS_COLOR) : h.status ? STATUS_COLORS[h.status] : NO_STATUS_COLOR;
+      const color = filterColor(filterKeyForHouse(h, gotv), gotv);
       return L.marker([h.lat as number, h.lng as number], { icon: pinIcon(color) }).bindPopup(
         popupContent(h.address || h.number)
       );
@@ -565,13 +554,22 @@ export function MapView({
             gotv={gotv}
           />
         ) : (
-          <button
-            onClick={() => setLayersPanelOpen(true)}
-            title="Boundary layers"
-            className="absolute right-3 top-3 z-[500] w-9 h-9 flex items-center justify-center bg-white border-2 border-black rounded-lg shadow-sm"
-          >
-            <Layers size={16} strokeWidth={2.5} />
-          </button>
+          <>
+            <button
+              onClick={() => setLayersPanelOpen(true)}
+              title="Boundary layers"
+              className="absolute right-3 top-3 z-[500] w-9 h-9 flex items-center justify-center bg-white border-2 border-black rounded-lg shadow-sm"
+            >
+              <Layers size={16} strokeWidth={2.5} />
+            </button>
+            <button
+              onClick={() => setExportModalOpen(true)}
+              title="Export map image"
+              className="absolute right-3 top-14 z-[500] w-9 h-9 flex items-center justify-center bg-white border-2 border-black rounded-lg shadow-sm"
+            >
+              <ImageDown size={16} strokeWidth={2.5} />
+            </button>
+          </>
         )}
       </div>
 
@@ -582,6 +580,16 @@ export function MapView({
             await onUploadOverlay(name, file);
             setUploadModalOpen(false);
           }}
+        />
+      )}
+
+      {exportModalOpen && (
+        <MapExportModal
+          houses={visiblePinned}
+          gotv={gotv}
+          title={canvassName}
+          subtitle={location}
+          onClose={() => setExportModalOpen(false)}
         />
       )}
     </div>
