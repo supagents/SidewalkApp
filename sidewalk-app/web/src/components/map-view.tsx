@@ -499,6 +499,13 @@ export function MapView({
           },
         });
         overlayLayersRef.current.set(o.id, layer);
+      } else {
+        // The layer object itself is cached/reused (see the effect's own
+        // comment above) — recoloring an overlay after upload (Layers
+        // panel's color picker) only changes `o.color` on the existing
+        // object, so the already-created Leaflet layer needs to be
+        // re-styled explicitly or it'd keep showing its original color.
+        layer.setStyle({ color: o.color, fillColor: o.color });
       }
       const shouldShow = !hiddenOverlayIds.has(o.id);
       const isOnMap = map.hasLayer(layer);
