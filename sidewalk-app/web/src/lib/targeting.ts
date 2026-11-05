@@ -56,6 +56,12 @@ export type TargetArea = {
   label: string;
   center: LatLng;
   count: number;
+  // The denominator for this area's rate — meaning depends on which
+  // function produced it (see each one's own comment): "every geocoded
+  // door nearby" for supportClusters/avoidAreas, "every known supporter
+  // nearby" for gotvPriorityAreas. Always >= count, since a cluster's own
+  // members are themselves within its radius.
+  total: number;
   houses: House[];
 };
 
@@ -67,16 +73,43 @@ function clusterLabel(cluster: HouseCluster, streetById: Map<string, Street>): s
   return `${names[0]} & ${names.length - 1} more streets`;
 }
 
-function toTargetAreas(clusters: HouseCluster[], streetById: Map<string, Street>, topN: number): TargetArea[] {
+// Every geocoded house within radiusMeters of `center` and matching
+// `predicate` — the same radius clusterHouses used to form the cluster in
+// the first place, so "total" and "count" are measuring the same
+// neighborhood. O(houses) per area; fine at campaign scale (a handful of
+// areas, each checked against at most a few thousand houses).
+function countNearby(houses: House[], center: LatLng, radiusMeters: number, predicate: (h: House) => boolean): number {
+  let n = 0;
+  for (const h of houses) {
+    if (h.lat == null || h.lng == null || !predicate(h)) continue;
+    if (haversineMeters(center, { lat: h.lat, lng: h.lng }) <= radiusMeters) n++;
+  }
+  return n;
+}
+
+function toTargetAreas(
+  clusters: HouseCluster[],
+  streetById: Map<string, Street>,
+  topN: number,
+  totalFor: (center: LatLng) => number
+): TargetArea[] {
   return clusters
     .slice()
     .sort((a, b) => b.houses.length - a.houses.length)
     .slice(0, topN)
-    .map((c) => ({ label: clusterLabel(c, streetById), center: c.center, count: c.houses.length, houses: c.houses }));
+    .map((c) => ({
+      label: clusterLabel(c, streetById),
+      center: c.center,
+      count: c.houses.length,
+      total: totalFor(c.center),
+      houses: c.houses,
+    }));
 }
 
 // The densest pockets of confirmed supporters — useful for lawn-sign
 // routes, volunteer recruiting, or picking where to hold a visible event.
+// `total` is every geocoded door nearby (any status, or none), so the rate
+// reads as "how much of this area supports us."
 export function supportClusters(
   houses: House[],
   streets: Street[],
@@ -85,14 +118,17 @@ export function supportClusters(
 ): TargetArea[] {
   const streetById = new Map(streets.map((s) => [s.id, s]));
   const supporters = houses.filter((h) => h.status === "support");
-  return toTargetAreas(clusterHouses(supporters, radiusMeters), streetById, topN);
+  return toTargetAreas(clusterHouses(supporters, radiusMeters), streetById, topN, (center) =>
+    countNearby(houses, center, radiusMeters, () => true)
+  );
 }
 
 // The mirror case: dense pockets of recorded opposition. This is a
 // resource-allocation signal, not anything about discouraging or
 // suppressing a vote — the standard field-organizing practice of not
 // spending your own limited volunteer-hours generating turnout for the
-// other side.
+// other side. `total` is every geocoded door nearby, same as
+// supportClusters, so the rate reads as "how much of this area opposes us."
 export function avoidAreas(
   houses: House[],
   streets: Street[],
@@ -101,14 +137,19 @@ export function avoidAreas(
 ): TargetArea[] {
   const streetById = new Map(streets.map((s) => [s.id, s]));
   const opposition = houses.filter((h) => h.status === "against");
-  return toTargetAreas(clusterHouses(opposition, radiusMeters), streetById, topN);
+  return toTargetAreas(clusterHouses(opposition, radiusMeters), streetById, topN, (center) =>
+    countNearby(houses, center, radiusMeters, () => true)
+  );
 }
 
 // Confirmed supporters not yet checked off in a GOTV canvass (House.visited
 // — see gotv-checklist.tsx), ranked by local density. The densest pockets
 // of still-uncontacted supporters are where a GOTV hour goes furthest;
 // see the per-canvass ROUTE tab for turn-by-turn routing once a team is
-// actually headed to one of these areas.
+// actually headed to one of these areas. `total` here is every KNOWN
+// supporter nearby (contacted or not), not every door — the rate reads as
+// "how much GOTV work is left in this supporter pocket," which is a
+// different question than supportClusters' "how supportive is this area."
 export function gotvPriorityAreas(
   houses: House[],
   streets: Street[],
@@ -117,7 +158,9 @@ export function gotvPriorityAreas(
 ): TargetArea[] {
   const streetById = new Map(streets.map((s) => [s.id, s]));
   const uncontacted = houses.filter((h) => h.status === "support" && !h.visited);
-  return toTargetAreas(clusterHouses(uncontacted, radiusMeters), streetById, topN);
+  return toTargetAreas(clusterHouses(uncontacted, radiusMeters), streetById, topN, (center) =>
+    countNearby(houses, center, radiusMeters, (h) => h.status === "support")
+  );
 }
 
 export type RepeatDoor = {
