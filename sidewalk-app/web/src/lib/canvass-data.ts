@@ -12,9 +12,21 @@ import {
   setDoc,
   updateDoc,
   writeBatch,
+  type WriteBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { Canvass, CanvassExport, CanvassMode, House, HouseStatus, Street, StreetType } from "@/lib/types";
+import type {
+  Actor,
+  Canvass,
+  CanvassExport,
+  CanvassMode,
+  House,
+  HouseEvent,
+  HouseEventField,
+  HouseStatus,
+  Street,
+  StreetType,
+} from "@/lib/types";
 import type { ParsedImport } from "@/lib/voter-import";
 
 // Firestore caps a batch at 500 writes; this leaves headroom for a canvass
@@ -63,9 +75,52 @@ function housesCol(campaignId: string, canvassId: string, streetId: string) {
 function houseRef(campaignId: string, canvassId: string, streetId: string, houseId: string) {
   return doc(housesCol(campaignId, canvassId, streetId), houseId);
 }
+function houseEventsCol(campaignId: string, canvassId: string, streetId: string, houseId: string) {
+  return collection(houseRef(campaignId, canvassId, streetId, houseId), "events");
+}
 
 function newId(col: ReturnType<typeof collection>) {
   return doc(col).id;
+}
+
+// Queues (onto an already-open batch) the event doc + House denorm update
+// that every canvassing-activity write needs alongside its own field
+// update — see updateHouseStatus/toggleHouseVisited/toggleHouseRevisit/
+// toggleHouseLawnSign below. Does NOT call batch.commit(); callers add
+// their own field-specific update (and any street/canvass counter updates)
+// then commit once, atomically. Firestore batches allow more than one
+// update() against the same document reference — they're applied in order
+// as part of the same atomic commit — so this second update to houseRef
+// alongside the caller's own field update is safe.
+function queueHouseEvent(
+  batch: WriteBatch,
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  field: HouseEventField,
+  oldValue: unknown,
+  newValue: unknown,
+  actor: Actor
+) {
+  const eventRef = doc(houseEventsCol(campaignId, canvassId, streetId, houseId));
+  batch.set(eventRef, {
+    campaignId,
+    canvassId,
+    streetId,
+    houseId,
+    field,
+    oldValue,
+    newValue,
+    actorUid: actor.uid,
+    actorName: actor.name,
+    actorType: actor.type,
+    createdAt: serverTimestamp(),
+  });
+  batch.update(houseRef(campaignId, canvassId, streetId, houseId), {
+    lastTouchedBy: actor.name,
+    lastTouchedAt: serverTimestamp(),
+  });
 }
 
 // ---------- Canvasses ----------
@@ -266,6 +321,8 @@ export function subscribeHouses(
           revisit: !!data.revisit,
           visited: !!data.visited,
           notes: data.notes ?? "",
+          lastTouchedBy: data.lastTouchedBy ?? null,
+          lastTouchedAt: data.lastTouchedAt?.toMillis?.() ?? null,
           createdAt: data.createdAt?.toMillis?.() ?? 0,
           address: data.address ?? "",
           lat: data.lat ?? null,
@@ -343,6 +400,8 @@ export async function addHouses(
       revisit: false,
       visited: false,
       notes: "",
+      lastTouchedBy: null,
+      lastTouchedAt: null,
       createdAt: serverTimestamp(),
       address: houseAddressFor(street, number, city, state),
       lat: null,
@@ -439,6 +498,8 @@ export async function importVoterList(
           revisit: false,
           visited: false,
           notes: h.notes,
+          lastTouchedBy: null,
+          lastTouchedAt: null,
           createdAt: serverTimestamp(),
           address: buildHouseAddress(h.number, group.name, h.city || fallbackCity, h.state || fallbackState),
           lat: null,
@@ -480,30 +541,78 @@ export async function importVoterList(
   return { housesAdded, housesSkipped, housesMarkedSupporter, streetsCreated };
 }
 
+// Plain patch for the fields that are data corrections, not canvassing-
+// activity events — number/floor/notes never get an events-subcollection
+// entry. status and visited each have their own dedicated function below
+// (updateHouseStatus, toggleHouseVisited) that also logs an event, same as
+// revisit/lawnSign already did via toggleHouseRevisit/toggleHouseLawnSign.
 export async function updateHouse(
   campaignId: string,
   canvassId: string,
   streetId: string,
   houseId: string,
-  patch: Partial<{ number: string; floor: string; status: HouseStatus | null; visited: boolean; notes: string }>
+  patch: Partial<{ number: string; floor: string; notes: string }>
 ) {
   await updateDoc(houseRef(campaignId, canvassId, streetId, houseId), patch);
   await updateDoc(canvassRef(campaignId, canvassId), { updatedAt: serverTimestamp() });
+}
+
+// Split out of updateHouse because a status change needs to log an event
+// (old value -> new value) and stamp lastTouchedBy/At — a plain patch has
+// no way to know the previous value. oldStatus is passed in by the caller
+// (it already has the current house in state) rather than read back from
+// Firestore.
+export async function updateHouseStatus(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  oldStatus: HouseStatus | null,
+  newStatus: HouseStatus | null,
+  actor: Actor
+) {
+  const batch = writeBatch(db);
+  batch.update(houseRef(campaignId, canvassId, streetId, houseId), { status: newStatus });
+  queueHouseEvent(batch, campaignId, canvassId, streetId, houseId, "status", oldStatus, newStatus, actor);
+  batch.update(canvassRef(campaignId, canvassId), { updatedAt: serverTimestamp() });
+  await batch.commit();
+}
+
+// Split out of updateHouse (same reasoning as updateHouseStatus) because
+// toggling this needs to log an event and stamp lastTouchedBy/At. No
+// street/canvass counter to maintain for this field, unlike revisit/
+// lawnSign below.
+export async function toggleHouseVisited(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string,
+  visited: boolean,
+  actor: Actor
+) {
+  const batch = writeBatch(db);
+  batch.update(houseRef(campaignId, canvassId, streetId, houseId), { visited });
+  queueHouseEvent(batch, campaignId, canvassId, streetId, houseId, "visited", !visited, visited, actor);
+  batch.update(canvassRef(campaignId, canvassId), { updatedAt: serverTimestamp() });
+  await batch.commit();
 }
 
 // Split out from updateHouse because toggling this one field also has to
 // keep the street's and canvass's revisitCount counters (used for the
 // follow-up badges in StreetNav/CanvassScreen/HomeScreen) in sync — a
 // plain patch has no way to know the previous value to compute the delta.
+// Also logs an event and stamps lastTouchedBy/At (queueHouseEvent).
 export async function toggleHouseRevisit(
   campaignId: string,
   canvassId: string,
   streetId: string,
   houseId: string,
-  revisit: boolean
+  revisit: boolean,
+  actor: Actor
 ) {
   const batch = writeBatch(db);
   batch.update(houseRef(campaignId, canvassId, streetId, houseId), { revisit });
+  queueHouseEvent(batch, campaignId, canvassId, streetId, houseId, "revisit", !revisit, revisit, actor);
   batch.update(streetRef(campaignId, canvassId, streetId), { revisitCount: increment(revisit ? 1 : -1) });
   batch.update(canvassRef(campaignId, canvassId), {
     revisitCount: increment(revisit ? 1 : -1),
@@ -518,16 +627,50 @@ export async function toggleHouseLawnSign(
   canvassId: string,
   streetId: string,
   houseId: string,
-  lawnSign: boolean
+  lawnSign: boolean,
+  actor: Actor
 ) {
   const batch = writeBatch(db);
   batch.update(houseRef(campaignId, canvassId, streetId, houseId), { lawnSign });
+  queueHouseEvent(batch, campaignId, canvassId, streetId, houseId, "lawnSign", !lawnSign, lawnSign, actor);
   batch.update(streetRef(campaignId, canvassId, streetId), { lawnSignCount: increment(lawnSign ? 1 : -1) });
   batch.update(canvassRef(campaignId, canvassId), {
     lawnSignCount: increment(lawnSign ? 1 : -1),
     updatedAt: serverTimestamp(),
   });
   await batch.commit();
+}
+
+// One-time fetch for the per-house "View history" action (see
+// house-row.tsx / house-history-modal.tsx) — not a live subscription,
+// since this is opened on demand and closed again, unlike the always-on
+// activeHouses subscription.
+export async function fetchHouseEvents(
+  campaignId: string,
+  canvassId: string,
+  streetId: string,
+  houseId: string
+): Promise<HouseEvent[]> {
+  const snap = await getDocs(
+    query(houseEventsCol(campaignId, canvassId, streetId, houseId), orderBy("createdAt", "desc"))
+  );
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      campaignId: data.campaignId,
+      canvassId: data.canvassId,
+      streetId: data.streetId,
+      houseId: data.houseId,
+      field: data.field,
+      oldValue: data.oldValue,
+      newValue: data.newValue,
+      actorUid: data.actorUid,
+      actorName: data.actorName,
+      actorType: data.actorType,
+      createdAt: data.createdAt?.toMillis?.() ?? 0,
+    };
+  });
 }
 
 export async function deleteHouse(
@@ -575,6 +718,8 @@ async function fetchCanvassExport(campaignId: string, canvassId: string, name: s
           revisit: !!data.revisit,
           visited: !!data.visited,
           notes: data.notes ?? "",
+          lastTouchedBy: data.lastTouchedBy ?? null,
+          lastTouchedAt: data.lastTouchedAt?.toMillis?.() ?? null,
           createdAt: data.createdAt?.toMillis?.() ?? 0,
           address: data.address ?? "",
           lat: data.lat ?? null,

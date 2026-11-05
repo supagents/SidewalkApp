@@ -16,7 +16,13 @@
 //     /streets/{streetId}
 //       name, position
 //       /houses/{houseId}
-//         number, status, lawnSign, notes, updatedBy, updatedAt
+//         number, status, lawnSign, notes, lastTouchedBy, lastTouchedAt
+//         /events/{eventId}
+//           campaignId, canvassId, streetId, houseId, field, oldValue,
+//           newValue, actorUid, actorName, actorType, createdAt
+//           (append-only audit log of status/visited/lawnSign/revisit
+//           changes — create only, never update/delete, even for a
+//           manager; see the houses/events rule below)
 //     /guests/{uid}
 //       displayName, joinedAt
 //       (written only by the joinCanvassByCode Cloud Function — grants
@@ -140,6 +146,29 @@ service cloud.firestore {
             allow read: if hasCanvassAccess(campaignId, canvassId);
             allow create, update: if hasCanvassAccess(campaignId, canvassId);
             allow delete: if isMember(campaignId);
+
+            // ---------- house events (audit trail) ----------
+            // Append-only: anyone with canvass access (member or guest) can
+            // log an event when they change status/visited/lawnSign/revisit,
+            // but nobody — not even a manager — can edit or delete one after
+            // the fact. Two checks on create stop a client from forging
+            // attribution or cross-canvass placement:
+            //   - actorUid must be the caller's own uid, so a guest or
+            //     member can never log an event as someone else.
+            //   - campaignId/canvassId must match this document's own path
+            //     variables, so a client can't write an event that *looks*
+            //     like it belongs to a different campaign/canvass than the
+            //     one it's actually nested under (relevant once a future
+            //     collection-group query trusts these fields directly
+            //     instead of the path).
+            match /events/{eventId} {
+              allow read: if hasCanvassAccess(campaignId, canvassId);
+              allow create: if hasCanvassAccess(campaignId, canvassId)
+                && request.resource.data.actorUid == request.auth.uid
+                && request.resource.data.campaignId == campaignId
+                && request.resource.data.canvassId == canvassId;
+              allow update, delete: if false;
+            }
           }
         }
 
