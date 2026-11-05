@@ -6,7 +6,7 @@
 // candidate anywhere uploads whatever boundary file their local
 // jurisdiction publishes, in whatever of these three formats it comes in.
 
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { kml as kmlToGeoJSON } from "@tmcw/togeojson";
 import shp from "shpjs";
 import type { FeatureCollection } from "geojson";
@@ -59,6 +59,15 @@ export function subscribeMapOverlays(campaignId: string, canvassId: string, cb: 
 
 export async function deleteMapOverlay(campaignId: string, canvassId: string, overlayId: string) {
   await deleteDoc(doc(overlaysCol(campaignId, canvassId), overlayId));
+}
+
+// Recolors an existing layer — the auto-assigned color from OVERLAY_COLORS
+// at upload time (see uploadMapOverlay) is just a starting point, not
+// permanent; anyone who can manage overlays can pick a different one from
+// the same fixed palette so adjacent/overlapping boundaries stay easy to
+// tell apart however they end up uploaded.
+export async function updateMapOverlayColor(campaignId: string, canvassId: string, overlayId: string, color: string) {
+  await updateDoc(doc(overlaysCol(campaignId, canvassId), overlayId), { color });
 }
 
 function roundCoords(value: unknown): unknown {
