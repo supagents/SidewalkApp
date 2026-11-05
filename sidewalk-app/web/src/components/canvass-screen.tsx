@@ -367,6 +367,8 @@ export function CanvassScreen({
     try {
       if (confirmDelete.type === "street") {
         await deleteStreet(campaignId, canvassId, confirmDelete.id);
+      } else if (confirmDelete.type === "layer") {
+        await deleteMapOverlay(campaignId, canvassId, confirmDelete.id);
       } else if (activeStreetId) {
         const h = activeHouses.find((x) => x.id === confirmDelete.id);
         await deleteHouse(campaignId, canvassId, activeStreetId, confirmDelete.id, !!h?.revisit, !!h?.lawnSign);
@@ -411,7 +413,8 @@ export function CanvassScreen({
   };
 
   const handleDeleteOverlay = (id: string) => {
-    deleteMapOverlay(campaignId, canvassId, id).catch(() => flashError("Couldn't delete that layer."));
+    const overlay = overlays.find((o) => o.id === id);
+    setConfirmDelete({ type: "layer", id, label: overlay?.name ?? "this layer" });
   };
 
   const handleOverlayColorChange = (id: string, color: string) => {

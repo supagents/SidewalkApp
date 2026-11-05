@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 
-export type ConfirmDeleteTarget = { type: "street" | "house" | "canvass" | "campaign"; id: string; label: string };
+export type ConfirmDeleteTarget = { type: "street" | "house" | "canvass" | "campaign" | "layer"; id: string; label: string };
 
 const REQUIRES_PASSWORD: Record<ConfirmDeleteTarget["type"], boolean> = {
   street: false,
   house: false,
   canvass: true,
   campaign: true,
+  layer: false,
 };
 
 const NOUN: Record<ConfirmDeleteTarget["type"], string> = {
@@ -16,6 +17,7 @@ const NOUN: Record<ConfirmDeleteTarget["type"], string> = {
   house: "house",
   canvass: "canvass",
   campaign: "campaign",
+  layer: "layer",
 };
 
 export function ConfirmDeleteModal({
@@ -78,6 +80,12 @@ export function ConfirmDeleteModal({
             <>
               This removes <span className="font-semibold text-black">{target.label}</span> and any notes on
               it. This can&apos;t be undone.
+            </>
+          )}
+          {target.type === "layer" && (
+            <>
+              This removes the <span className="font-semibold text-black">{target.label}</span> boundary from the
+              map for everyone on this canvass. You can add it back by re-uploading the file.
             </>
           )}
         </div>
